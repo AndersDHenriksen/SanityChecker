@@ -11,9 +11,9 @@ import glob
 def find_openings(image_path, blood_also=False):
     """ Take full image and return openings in the label.
 
-	Labels wholes are identified using rough idea of their location,
-	the bottom hat algorithm and thresholding.
-	In the found openings have an unexpected size an error string will be returned.
+    Labels wholes are identified using rough idea of their location,
+    the bottom hat algorithm and thresholding.
+    In the found openings have an unexpected size an error string will be returned.
 
     :param image_path: String with path and name of image.
     :param blood_also: Bool, if blood openings should be found.
@@ -64,7 +64,7 @@ def find_openings(image_path, blood_also=False):
             thres_image = cv2.morphologyEx(thres_image, cv2.MORPH_CLOSE, kernel_r25)
             if not np.any(thres_image):
                 error = opening.Name + 'opening threshold increased too much. '
-                print 'Error: ' + error  # This could be error/exception instead
+                # print 'Error: ' + error  # This could be error/exception instead
                 continue
 
             thres_opening = morphology.reconstruction(opening_mask & thres_image, thres_image)
@@ -94,7 +94,7 @@ def find_openings(image_path, blood_also=False):
         elips_axis = np.array([np.size(opening.I), np.size(opening.J)])
         if any(elips_axis > cut_side + 100) | any(elips_axis < cut_side - 100):
             error = opening.Name + ' opening is wrong size. '
-            print 'Error: ' + error
+            # print 'Error: ' + error
 
         # Assign rest of opening
         opening.cImg = color_image[imin:imax, jmin:jmax, :]
@@ -129,8 +129,8 @@ def find_same_chamber(opening, ref_chamber, debug=False):
 def find_mesc_chamber(opening, debug=False):
     """ Find/detect MESC chamber in opening object.
 
-	Using the higher intensity at the chamber edges and Hough transform
-	the round MESC chamber is detected in opening image data.
+    Using the higher intensity at the chamber edges and Hough transform
+    the round MESC chamber is detected in opening image data.
 
     :param opening: Opening object, from which to extract chamber.
     :param debug: Bool, if True visual plot of new chamber is produced.
@@ -183,8 +183,8 @@ def find_mesc_chamber(opening, debug=False):
 def find_bc_chamber(opening, debug=False):
     """ Find/detect BS chamber in opening object.
 
-	Using the edge detection of the chamber edges and two Hough transforms
-	the elliptical chamber is detected in opening image data.
+    Using the edge detection of the chamber edges and two Hough transforms
+    the elliptical chamber is detected in opening image data.
 
     :param opening: Opening object, from which to extract chamber.
     :param debug: Bool, if True visual plot of new chamber is produced.
@@ -274,9 +274,9 @@ def imgradient(img):
 def half_hough_detection(mask, good_range):
     """ Detect circle using half the image.
 
-	Using Hough transform the best circle corresponding to edge mask is found.
-	If this circle is outside the acceptable range. Then fix j_center and radius and
-	loop through i_center to find highest overlap.
+    Using Hough transform the best circle corresponding to edge mask is found.
+    If this circle is outside the acceptable range. Then fix j_center and radius and
+    loop through i_center to find highest overlap.
 
     :param mask: edge mask where to find the circle
     :param good_range: acceptable range for circle center coordinates
@@ -306,9 +306,9 @@ def half_hough_detection(mask, good_range):
             overlap[i] = np.sum(mask[r_cor, c_cor])
 
         if np.max(overlap) > 20:
-            circle = (j_mid, i_range[np.argmax(overlap)], radius)  # TODO check j_mid first
+            circle = (i_range[np.argmax(overlap)], j_mid, radius)
         else:
-            circle = (j_mid, i_mid, radius)
+            circle = (i_mid, j_mid, radius)
 
     # Make bw set image from circle
     r_cir, c_cir = draw.circle(circle[0], circle[1], circle[2], shape=mask.shape)
@@ -317,12 +317,12 @@ def half_hough_detection(mask, good_range):
     return set_cir, circle
 
 
-def bc_spot_detection(chamber, debug=False):
+def detect_spot_bc(chamber, debug=False):
     """ Detect reagent spot in BS chamber.
 
-	Extract intensity histogram for the part of the BC chamber in the shadow of the label.
-	Calculate features based on this histogram, and use a linear classifier to determine
-	if reagent spot is present.
+    Extract intensity histogram for the part of the BC chamber in the shadow of the label.
+    Calculate features based on this histogram, and use a linear classifier to determine
+    if reagent spot is present.
 
     :param chamber: BS chamber to detect spot in.
     :param debug: Bool, if True visual plot to understand algorithm steps.
@@ -330,22 +330,20 @@ def bc_spot_detection(chamber, debug=False):
     """
 
     setting = {'UseRed': True, 'UseLR': False}
-    roi_poly = np.array([(68, 43), (96, 156), (177, 234), (273, 265), (214, 302), (132, 294), (16, 240),
-                         (10, 120), (68, 43)], dtype=np.int32)  # TODO are two [[ and ]] needed
+    roi_poly = np.array([[(68, 43), (96, 156), (177, 234), (273, 265), (214, 302), (132, 294), (16, 240),
+                         (10, 120), (68, 43)]], dtype=np.int32)
     conclusions = ['Spot NOT detected in BC chamber.', 'Spot detected in BC chamber.']
 
     # Define mask for extraction the points inside the ROI
-    in_shadow_mask = np.zeros(chamber.Img.shape, dtype=bool)
+    in_shadow_mask = np.zeros(chamber.Img.shape, dtype='uint8')
     cv2.fillConvexPoly(in_shadow_mask, roi_poly, True)
 
     if setting['UseRed']:
-        usefull_image = chamber.cImg[:, :, 3][in_shadow_mask]  # TODO check channel 3 is red
+        usefull_image = chamber.cImg[:, :, 2][in_shadow_mask>0]
     else:
         usefull_image = chamber.Img[in_shadow_mask]
 
-    # Calculate histogram, feature and binary activations of ROI
-    useful_count = np.histogram(usefull_image, np.arange(np.min(usefull_image), np.max(usefull_image) + 1),
-                                density=True)
+    # Calculate feature and binary activations of ROI
     features = image_roi_features(usefull_image)
     activations = np.array([features[1] > 0.087, features[2] < 12, features[3] < 15, features[4] < 16,
                             features[6] < 5.4, features[7] > 1.55, features[8] > 10, features[9] < 0.006])
@@ -359,26 +357,21 @@ def bc_spot_detection(chamber, debug=False):
         has_spot = activations.dot(weights) <= 2
 
     # Check if spot based on histogram shape, i.e. look for two separate peaks
-    if not has_spot and np.size(useful_count) > 8:
-        i_range = range(4, np.size(useful_count) - 3)
-        for i in i_range:
-            idx_1 = np.argmax(useful_count[:i - 3])
-            peak_1 = useful_count[idx_1]
-            idx_2 = np.argmax(useful_count[i + 4:])
-            peak_2 = useful_count[i + 4:][idx_2]
-            has_spot = has_spot | ((min([peak_1, peak_2]) > useful_count[i] & peak_2 / peak_1 > .1) &
-                                   (peak_1 / peak_2 > .1) & (
-                                       min([peak_1, peak_2]) / min(useful_count[peak_1:peak_2 + i + 3]) > 2))
+    if not has_spot:
+        has_spot = check_double_peak(usefull_image)
 
-    print conclusions[has_spot]
+    # If print out is desired
+    # print conclusions[has_spot]
+
     if debug:
         plt.figure()
-        plt.subplot(1, 2, 1)
+        ax = plt.subplot(1, 2, 1)
         plt.imshow(chamber.cImg)
-        plt.Polygon(roi_poly,
-                    facecolor=None)  # https://stackoverflow.com/questions/44025403/how-to-use-matplotlib-path-to-draw-polygon
+        poly = plt.Polygon(roi_poly[0], ec='r', fc='none')
+        ax.add_patch(poly)
         plt.subplot(1, 2, 2)
-        plt.plot(np.arange(np.min(usefull_image), np.max(usefull_image)), useful_count)
+        count, _ = np.histogram(usefull_image, np.arange(np.min(usefull_image), np.max(usefull_image) + 1))
+        plt.plot(np.arange(np.min(usefull_image), np.max(usefull_image)), count)
         plt.title(conclusions[has_spot])
 
     return has_spot
@@ -387,16 +380,16 @@ def bc_spot_detection(chamber, debug=False):
 def image_roi_features(image_vector):
     """ Calculate features describing the histogram of the image_vector input.
 
-    :param image_vector: array/list of intensitiy values inside the ROI.
+    :param image_vector: array/list of intensity values inside the ROI.
     :return: list with 10 feature values.
     """
 
     # Calculate histogram and peak value
-    image_hist = np.histogram(image_vector, np.arange(0, 256), density=True)
+    image_hist, _ = np.histogram(image_vector, np.arange(0, 257), density=True)
     peak = max(image_hist)
 
     # Calculate features
-    feature = [] * 10
+    feature = [np.NaN] * 10
     feature[0] = np.median(image_vector)
     feature[1] = peak
     feature[2] = max_span(image_hist > .4 * peak)
@@ -405,24 +398,45 @@ def image_roi_features(image_vector):
     feature[5] = np.mean(image_vector)
     feature[6] = np.std(image_vector)
     feature[7] = scipy.stats.stats.skew(image_vector)
-    feature[8] = scipy.stats.stats.kurtosis(image_vector)
+    feature[8] = scipy.stats.stats.kurtosis(image_vector,fisher=False)
 
     # Calculate distance to similar gauss
     gauss = 1 / np.sqrt(2 * np.pi * feature[6] ** 2) * np.exp(
-        -(np.arange(0, 256) - feature[5] ** 2 / (2 * feature[6] ** 2)))
-    feature[9] = np.sum((image_hist - gauss) ** 2)  # TODO check this
+        -(np.arange(0, 256) - feature[5]) ** 2 / (2 * feature[6] ** 2))
+    feature[9] = np.sum((image_hist - gauss) ** 2)
     return feature
 
 
 def max_span(a):
     """ Return the lenght/span of true elements in input. """
-    return np.argwhere(a)[-1] - np.argwhere(a)[0]
+    return np.argwhere(a)[-1][0] - np.argwhere(a)[0][0]
 
 
-def bss_blood_detection(opening, debug=False):
+def check_double_peak(image_vector):
+    """ Check if count/histogram has two distinct peaks."""
+
+    # Calculate histogram and check its width
+    count, _ = np.histogram(image_vector, np.arange(np.min(image_vector), np.max(image_vector) + 1), density=True)
+    if np.size(count) <= 8:
+        return False
+
+    # Check if any point satisfy double peak requirements
+    i_range = range(4, np.size(count) - 3)
+    double_peak = np.zeros(i_range[-1] + 1, dtype='bool')
+    for i in i_range:
+        idx_1 = np.argmax(count[:i - 3])
+        peak_1 = count[idx_1]
+        idx_2 = np.argmax(count[i + 3:])
+        peak_2 = count[i + 3:][idx_2]
+        double_peak[i] = ((min([peak_1, peak_2]) > count[i]) & (peak_2 / peak_1 > .1) & (peak_1 / peak_2 > .1) & (
+        min([peak_1, peak_2]) / (1e-7 + min(count[idx_1:idx_2 + i + 3])) > 2))
+    return np.any(double_peak)
+
+
+def detect_blood_bss(opening, debug=False):
     """ Detect if blood is present in BSS chamber.
 
-	Detects blood if a harcoded Region-Of-Interest (ROI) is relatively darker than opening.
+    Detects blood if a harcoded Region-Of-Interest (ROI) is relatively darker than opening.
 
     :param opening: BSS opening to detect blood in.
     :param debug: Bool, if True visual plot to understand algorithm steps.
@@ -439,20 +453,23 @@ def bss_blood_detection(opening, debug=False):
     cv2.fillConvexPoly(mask, roi_poly, True)
     blood_present = np.mean(opening.Img[mask]) / np.mean(opening.Img) < setting['Ratio']
 
-    print conclusions[blood_present]
+    # If print output is desired
+    # print conclusions[blood_present]
+
     if debug:
         plt.figure()
+        ax = plt.gca()
         plt.imshow(opening.Img)
-        plt.Polygon(roi_poly,
-                    facecolor=None)  # https://stackoverflow.com/questions/44025403/how-to-use-matplotlib-path-to-draw-polygon
+        poly = plt.Polygon(roi_poly[0], ec='r', fc='none')
+        ax.add_patch(poly)
         plt.title(conclusions[blood_present])
     return blood_present
 
 
-def ofc2_blood_detection(opening, debug=False):
+def detect_blood_ofc2(opening, debug=False):
     """ Detect if blood is present in OFC2 chamber.
 
-	Detects blood if a harcoded Region-Of-Interest (ROI) is relatively darker than opening.
+    Detects blood if a harcoded Region-Of-Interest (ROI) is relatively darker than opening.
 
     :param opening: OFC2 opening to detect blood in.
     :param debug: Bool, if True visual plot to understand algorithm steps.
@@ -468,21 +485,24 @@ def ofc2_blood_detection(opening, debug=False):
     cv2.fillConvexPoly(mask, roi_poly, True)
     blood_present = np.mean(opening.Img[mask]) / np.mean(opening.Img) < setting['Ratio']
 
-    print conclusions[blood_present]
+    # If print output is desired
+    # print conclusions[blood_present]
+
     if debug:
         plt.figure()
+        ax = plt.gca()
         plt.imshow(opening.Img)
-        plt.Polygon(roi_poly,
-                    facecolor=None)  # https://stackoverflow.com/questions/44025403/how-to-use-matplotlib-path-to-draw-polygon
+        poly = plt.Polygon(roi_poly[0], ec='r', fc='none')
+        ax.add_patch(poly)
         plt.title(conclusions[blood_present])
     return blood_present
 
 
-def mesc_spot_detection(chamber, debug=False):
+def detect_spot_mesc(chamber, debug=False):
     """ Detect beads spot in MESC chamber.
 
-	Look for a magnetic beads spot either using a computer vision based intensitiy method,
-	or using histogram of the middle chamber intensities and linear classifier.
+    Look for a magnetic beads spot either using a computer vision based intensitiy method,
+    or using histogram of the middle chamber intensities and linear classifier.
 
     :param chamber: MESC chamber to detect spot in.
     :param debug: Bool, if True visual plot to understand algorithm steps.
@@ -500,46 +520,38 @@ def mesc_spot_detection(chamber, debug=False):
     # Remove any linear slope in contrast mask, if contrast mask is too bright in SW corner
     if setting['UseLinearCorrection']:
         coef = np.linalg.lstsq(np.array([np.ones(chamber.X[inner_mask].shape, dtype=float),
-                                         chamber.X[inner_mask].astype('f'), chamber.Y[inner_mask].astype('f')]),
-                               chamber_contrast[inner_mask])
-        chamber_contrast = chamber_contrast - min([0, coef[1]]) * chamber.X - min(
-            [0, coef[2]]) * chamber.Y  # TODO check this can be handled as uint8
+                                         chamber.X[inner_mask].astype('f'), chamber.Y[inner_mask].astype('f')]).T,
+                               chamber_contrast[inner_mask])[0]
+    chamber_contrast = np.round(
+        chamber_contrast - min([0, coef[1]]) * chamber.X - min([0, coef[2]]) * chamber.Y).astype('uint8')
 
     # Use Logistic regression and histogram to determine if beads spot
     if setting['UseLR']:
-        usefull_contrast = chamber_contrast[chamber.R < 0.68]
-        features = image_roi_features(usefull_contrast)
+        useful_contrast = chamber_contrast[chamber.R < 0.68]
+        features = image_roi_features(useful_contrast)
         weights = np.array([-25.193, -2.131, 6.5302, 0.17148, 0.20268, 1.5053, 4.0306, -1.4134, -2.8493, 0.13126,
                             257.1])
         has_beads = np.insert(features, 0, 1).dot(weights) > 0
 
-        useful_count = np.histogram(usefull_contrast, np.arange(np.min(usefull_contrast), np.max(usefull_contrast) + 1),
-                                    density=True)
-
         # Look for double peak in histogram
-        if not has_beads and np.size(useful_count) > 8:
-            i_range = range(4, np.size(useful_count) - 3)
-            for i in i_range:
-                idx_1 = np.argmax(useful_count[:i - 3])
-                peak_1 = useful_count[idx_1]
-                idx_2 = np.argmax(useful_count[i + 4:])
-                peak_2 = useful_count[i + 4:][idx_2]
-                has_beads = has_beads | ((min([peak_1, peak_2]) > useful_count[i] & peak_2 / peak_1 > .1) &
-                                         (peak_1 / peak_2 > .1) & (
-                                             min([peak_1, peak_2]) / min(useful_count[peak_1:peak_2 + i + 3]) > 2))
+        if not has_beads:
+            has_beads = check_double_peak(useful_contrast)
 
-        print conclusions[has_beads]
+        # If print output is desired
+        # print conclusions[has_beads]
+
         if debug:
             plt.figure()
             plt.subplot(1, 2, 1)
             plt.imshow(chamber_contrast)
             plt.subplot(1, 2, 2)
-            plt.plot(np.arange(np.min(usefull_contrast), np.max(usefull_contrast)), useful_count)
+            count, _ = np.histogram(useful_contrast, np.arange(np.min(useful_contrast), np.max(useful_contrast) + 1))
+            plt.plot(np.arange(np.min(useful_contrast), np.max(useful_contrast)), count)
             plt.title(conclusions[has_beads])
         return has_beads
 
     # Get background value of chamber_contrast
-    inner_contrast = chamber_contrast[inner_mask]
+    inner_contrast = chamber_contrast[inner_mask]  # TODO at this point in step-debugging-checking
     background = np.mean(inner_contrast < np.percentile(inner_contrast, 20))
 
     # Loop through different contrasts-threshold to find most likely bead pattern
@@ -581,7 +593,9 @@ def mesc_spot_detection(chamber, debug=False):
         spot_size = np.sum(ext_mask)
         has_beads = spot_size > (4800 + 1000 * (thresholds[best_thres] < 5))
 
-    print conclusions[has_beads]
+    # If print output is desired
+    # print conclusions[has_beads]
+
     if debug:
         plt.figure()
         plt.subplot(1, 2, 1)
@@ -592,12 +606,12 @@ def mesc_spot_detection(chamber, debug=False):
     return has_beads
 
 
-def mesc_overflow_detection(chamber, reference_chamber, debug=False):
+def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     """ Detect MESC problem, either bubble or overflow.
 
-	The image data from chamber and reference chamber is aligned and subtracted to make a diff image.
-	In this diff image veritcal lines of high intensity (overflow)
-	and bubbles whose edge are intensity than the background are both detected.
+    The image data from chamber and reference chamber is aligned and subtracted to make a diff image.
+    In this diff image veritcal lines of high intensity (overflow)
+    and bubbles whose edge are intensity than the background are both detected.
 
     :param chamber: MESC chamber object from image 2 or 3.
     :param reference_chamber: MESC chamber object before liquid, i.e. from image 1.
@@ -636,7 +650,9 @@ def mesc_overflow_detection(chamber, reference_chamber, debug=False):
         bubble_area = np.sum(bubble_areas[np.logical_and(bubble_areas > 400, bubble_areas < 20000)])
         mesc_overflow = 2 * (bubble_area > 250)
 
-    print conclusions[mesc_overflow]
+    # If print output is desired
+    # print conclusions[mesc_overflow]
+
     if debug:
         plt.figure()
         plt.subplot(1, 2, 1)
@@ -652,10 +668,10 @@ def mesc_overflow_detection(chamber, reference_chamber, debug=False):
 def get_overlap_images(img1, img2, translation=None):
     """ Get overlap of images from two images.
 
-	Gets image overlap, which is usefull to make sure output images are of equal size.
-	Overlap is calculated by cropping highest i,j values not in both images.
-	Further, translation is an optimal output which the algorithm understands as a
-	to-do translation of image 2, before calculating overlap.
+    Gets image overlap, which is usefull to make sure output images are of equal size.
+    Overlap is calculated by cropping highest i,j values not in both images.
+    Further, translation is an optimal output which the algorithm understands as a
+    to-do translation of image 2, before calculating overlap.
 
     :param img1: np.array of uint8, image 1.
     :param img2: np.array of uint8, image 2.
@@ -691,8 +707,8 @@ def get_overlap_images(img1, img2, translation=None):
 def corr2d(img1, img2, max_movement=12):
     """ Calculate translation between image 1 and image 2.
 
-	Using fft based cross-corelation the best match between image1 and image2 is found.
-	Image 1 and image 2 must be the same size. If not, use get_overlap_images before hand.
+    Using fft based cross-corelation the best match between image1 and image2 is found.
+    Image 1 and image 2 must be the same size. If not, use get_overlap_images before hand.
 
     :param img1: np.array of uint8, image 1.
     :param img2: np.array of uint8, image 2.
@@ -722,7 +738,7 @@ def corr2d(img1, img2, max_movement=12):
         # Fit data to p(0) + p(1)*x + p(2)*y + p(3)*x^2 + p(4)*xy + p(5)*y^2 and get top point
         fit_data = np.log(xcorr2d[i_idx - n_fit:i_idx + n_fit, j_idx - n_fit:j_idx + n_fit])
         idx_i, idx_j = np.meshgrid(np.arange(-n_fit, n_fit + 1), np.arange(-n_fit, n_fit + 1))  # TODO check this
-        p = np.linalg.lstsq(np.array([np.ones(idx_i), idx_i, idx_j, idx_i ** 2, idx_i * idx_j, idx_j ** 2]), fit_data)
+        p = np.linalg.lstsq(np.array([np.ones(idx_i), idx_i, idx_j, idx_i ** 2, idx_i * idx_j, idx_j ** 2]).T, fit_data)[0]
         delta_ij = np.array([2 * p[5] * p[1] - p[2] * p[4], 2 * p[2] * p[3] - p[1] * p[4]]) / (
         p[4] ** 2 - 4 * p[5] * p[3])
 
@@ -734,22 +750,11 @@ def corr2d(img1, img2, max_movement=12):
     return delta_ij + np.array([i_idx, j_idx]) - mid_points
 
 
-def main(blood_test=False):
+def SanityChecker(image_path, blood_test=False):
     """ The main function managing images and tests. """
 
     result = dict()
     result['Error'] = ''
-
-    # Windows: image_folder = 'E:\Google Drev\BluSense\Image Library_PlasmaSerum\Correct procedure_1'
-    # Windows2: image_folder = 'C:\Users\310229518\Google Drive\BluSense\Image Library_PlasmaSerum\Correct procedure_1'
-    # Linux: image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
-    image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
-    image_paths = glob.glob(image_folder + '/*.jpg')
-    n_images = len(image_paths)
-    if (n_images != 3) & (n_images != 5):
-        result['Error'] = 'Not 3 or 5 images. '
-        print 'Error: ' + result['Error']
-        # return Result
 
     # Image 0
     image_idx = 0
@@ -758,8 +763,8 @@ def main(blood_test=False):
     result['Error'] = result['Error'] + error
     bc_chamber = find_bc_chamber(openings[0])
     reference_mesc_chamber = find_mesc_chamber(openings[1])
-    result['BcSpot'] = bc_spot_detection(bc_chamber)
-    result['MescSpot'] = mesc_spot_detection(reference_mesc_chamber)
+    result['BcSpot'] = detect_spot_bc(bc_chamber)
+    result['MescSpot'] = detect_spot_mesc(reference_mesc_chamber)
 
     # Image 1
     image_idx = 1
@@ -769,9 +774,9 @@ def main(blood_test=False):
         mesc_chamber = find_mesc_chamber(openings[1])
     else:
         mesc_chamber = find_same_chamber(openings[1], reference_mesc_chamber)
-    result['MescProblem'] = mesc_overflow_detection(mesc_chamber, reference_mesc_chamber)
+    result['MescProblem'] = detect_badfill_mesc(mesc_chamber, reference_mesc_chamber)
     if blood_test:
-        result['BloodPresent'] = ofc2_blood_detection(openings[2]) & bss_blood_detection(openings[3])
+        result['BloodPresent'] = detect_blood_ofc2(openings[2]) & detect_blood_bss(openings[3])
 
     print 'Sanity checker finished'
     return result.items()
@@ -809,15 +814,28 @@ class Chamber:
         self.OpnI = self.OpnI[np.logical_and(self.OpnI > -1, self.OpnI < np.size(opening.Img, 1))]
         self.OpnJ = np.round(j_mean_opn + np.arange(-j_r, j_r + 1)).astype('int')
         self.OpnJ = self.OpnJ[np.logical_and(self.OpnJ > -1, self.OpnJ < np.size(opening.Img, 1))]
-        self.Img = opening.Img[self.OpnI[0]:self.OpnI[-1], self.OpnJ[0]:self.OpnJ[-1]]
+        self.Img = opening.Img[self.OpnI[0]:self.OpnI[-1] + 1, self.OpnJ[0]:self.OpnJ[-1] + 1]
         if np.size(opening.cImg) > 0:
-            self.cImg = opening.cImg[self.OpnI[0]:self.OpnI[-1], self.OpnJ[0]:self.OpnJ[-1]]
-        self.X, self.Y = np.meshgrid(np.linspace(-1, 1, np.size(self.OpnI)), np.linspace(1, -1, np.size(self.OpnJ)))
+            self.cImg = opening.cImg[self.OpnI[0]:self.OpnI[-1] + 1, self.OpnJ[0]:self.OpnJ[-1] + 1]
+        self.X, self.Y = np.meshgrid(np.linspace(-1, 1, np.size(self.OpnJ)), np.linspace(1, -1, np.size(self.OpnI)))
         self.R = np.sqrt(self.X ** 2 + self.Y ** 2)
 
 
 if __name__ == "__main__":
-    main()
+
+    # Windows: image_folder = 'E:\Google Drev\BluSense\Image Library_PlasmaSerum\Correct procedure_1'
+    # Windows2: image_folder = 'C:\Users\310229518\Google Drive\BluSense\Image Library_PlasmaSerum\Correct procedure_1'
+    # Linux: image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
+    image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
+    image_paths = glob.glob(image_folder + '/*.jpg')
+    n_images = len(image_paths)
+    if (n_images != 3) & (n_images != 5):
+        print 'Error: Not 3 or 5 images.'
+    else:
+        if(n_images == 5):
+            image_paths = [image_paths[0], image_paths[2], image_paths[4]]
+        SanityChecker(image_paths)
+
 
     # Install instructions for Anaconda 3.6
     # conda update conda
