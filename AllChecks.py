@@ -67,7 +67,7 @@ def find_openings(image_path, blood_also=False):
                 # print 'Error: ' + error  # This could be error/exception instead
                 continue
 
-            thres_opening = morphology.reconstruction(opening_mask & thres_image, thres_image)
+            thres_opening = imreconstruct(opening_mask, thres_image)
             thres_projection_i = np.argwhere(np.any(thres_opening, axis=0))
             thres_projection_j = np.argwhere(np.any(thres_opening, axis=1))
             span_i = thres_projection_i.item(-1) - thres_projection_i.item(0)
@@ -116,12 +116,15 @@ def find_same_chamber(opening, ref_chamber, debug=False):
 
     i_mean = np.mean(ref_chamber.OpnI)
     j_mean = np.mean(ref_chamber.OpnJ)
-    i_r = np.size(ref_chamber.OpnI)
-    j_r = np.size(ref_chamber.OpnJ)
+    i_r = int(round((np.size(ref_chamber.OpnI)-1)/2))
+    j_r = int(round((np.size(ref_chamber.OpnJ)-1)/2))
 
     if debug:
         plt.figure()
-        cv2.ellipse(opening.cImg, (i_mean, j_mean), (i_r, j_r), 0, 0, 360, (255, 0, 0))
+        plt.imshow(opening.cImg)
+        ax = plt.gca()
+        ellipse = Ellipse(xy=(j_mean, i_mean), width=2 * j_r, height=2 * i_r, edgecolor='r', fc='None', lw=2)
+        ax.add_patch(ellipse)
 
     return Chamber(opening, i_mean, j_mean, i_r, j_r)
 
@@ -205,7 +208,7 @@ def find_bc_chamber(opening, debug=False):
 
     # Adjust mask
     if setting['UseClosing']:
-        kernel_r3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (6, 6))
+        kernel_r3 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
         edge_mask = cv2.morphologyEx(edge_mask.astype('uint8'), cv2.MORPH_CLOSE, kernel_r3)
     if setting['UseThinning']:
         edge_mask = morphology.thin(edge_mask)
@@ -265,10 +268,28 @@ def find_bc_chamber(opening, debug=False):
 
     return Chamber(opening, i_mean, j_mean, i_r, j_r)
 
+def imreconstruct(marker, mask):
+    """Performs morphological reconstruction of the image marker under the image mask."""
+    return morphology.reconstruction(marker & mask, mask).astype('bool')
 
 def imgradient(img):
     """ Calculates the (Sobel) gradient magnitude of the image."""
     return np.sqrt(cv2.Sobel(img, cv2.CV_64F, 1, 0) ** 2 + cv2.Sobel(img, cv2.CV_64F, 0, 1) ** 2)
+
+def bwareafilt(mask, n=1, range = (0, np.inf)):
+    """Extract objects from binary image by size """
+    labels = measure.label(mask.astype('uint8'),background=0)
+    area_idx = np.arange(1,np.max(labels) + 1)
+    areas = np.array([np.sum(labels == i) for i in area_idx])
+    inside_range_idx = np.logical_and(areas >= range[0], areas <= range[1])
+    area_idx = area_idx[inside_range_idx]
+    areas = areas[inside_range_idx]
+    keep_idx = area_idx[np.argsort(areas)[::-1][0:n]]
+    kept_areas = areas[keep_idx-1]
+    if n == 1:
+        kept_areas = kept_areas[0]
+    kept_mask = np.isin(labels,keep_idx)
+    return (kept_mask, kept_areas)
 
 
 def half_hough_detection(mask, good_range):
@@ -522,7 +543,7 @@ def detect_spot_mesc(chamber, debug=False):
         coef = np.linalg.lstsq(np.array([np.ones(chamber.X[inner_mask].shape, dtype=float),
                                          chamber.X[inner_mask].astype('f'), chamber.Y[inner_mask].astype('f')]).T,
                                chamber_contrast[inner_mask])[0]
-    chamber_contrast = np.round(
+        chamber_contrast = np.round(
         chamber_contrast - min([0, coef[1]]) * chamber.X - min([0, coef[2]]) * chamber.Y).astype('uint8')
 
     # Use Logistic regression and histogram to determine if beads spot
@@ -551,44 +572,42 @@ def detect_spot_mesc(chamber, debug=False):
         return has_beads
 
     # Get background value of chamber_contrast
-    inner_contrast = chamber_contrast[inner_mask]  # TODO at this point in step-debugging-checking
-    background = np.mean(inner_contrast < np.percentile(inner_contrast, 20))
+    inner_contrast = chamber_contrast[inner_mask]
+    background = np.percentile(inner_contrast, 100*np.mean(inner_contrast < np.percentile(inner_contrast, 20)))
 
     # Loop through different contrasts-threshold to find most likely bead pattern
     center_mask = chamber.R < 0.2
-    spot_sizes = [] * 8
-    contrast_masks = [] * 8
+    spot_sizes = [np.NaN] * 8
+    contrast_masks = [np.NaN] * 8
     thresholds = range(3, 11)
     for i in range(0, len(thresholds)):
         contrast_masks[i] = np.logical_or(chamber_contrast > background + thresholds[i], np.invert(inner_mask))
         segmentation.clear_border(contrast_masks[i], in_place=True)
-        contrast_masks[i] = morphology.reconstruction(center_mask & contrast_masks[i], contrast_masks[i])
+        contrast_masks[i] = imreconstruct(center_mask, contrast_masks[i])
         spot_sizes[i] = np.sum(contrast_masks[i])
 
     # Assign contrast_mask to largest spotsize or large contrast region
     best_thres = np.argmax(spot_sizes)
     contrast_mask = np.logical_or(contrast_masks[best_thres],
                                   np.logical_and(chamber_contrast > background + 10, inner_mask))
-    contrast_mask = morphology.reconstruction(center_mask & contrast_mask, contrast_mask)
+    contrast_mask = imreconstruct(center_mask, contrast_mask)
+    contrast_mask, spot_size = bwareafilt(contrast_mask)
 
     # Beads are present if largest object is big enough
-    contrast_contours = cv2.findContours(contrast_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    spot_size = max(cv2.contourArea(contrast_contours))
     has_beads = spot_size > (4800 + 1000 * (thresholds[best_thres] < 5))
 
     # Do erosion, if area has not changed much investigate further
-    kernel_r3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (6, 6))
-    eroded_mask = cv2.erode(contrast_masks, kernel_r3)
-    eroded_contours = cv2.findContours(eroded_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    eroded_size = max(cv2.contourArea(eroded_contours))
-    solidity = eroded_size / spot_size
+    kernel_r3 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    eroded_mask = cv2.erode(contrast_mask.astype('uint8'), kernel_r3)
+    _, eroded_size = bwareafilt(eroded_mask)
+    solidity = float(eroded_size) / spot_size
 
     # Investigate by extending the mask while keeping lower bound on contrast or intensity
-    if not has_beads & ((spot_size > 2500 & solidity > .5) | (spot_size > 4500 & solidity > .45)):
+    if (not has_beads) & (((spot_size > 2500) & (solidity > .5)) | ((spot_size > 4500) & (solidity > .45))):
         ext_contrast = chamber_contrast >= np.min(chamber_contrast[contrast_mask])
-        ext_contrast = morphology.reconstruction(contrast_mask & ext_contrast, ext_contrast)
+        ext_contrast = imreconstruct(contrast_mask, ext_contrast)
         ext_intensity = chamber.Img >= np.min(chamber.Img[contrast_mask])
-        ext_intensity = morphology.reconstruction(contrast_mask & ext_intensity, ext_intensity)
+        ext_intensity = imreconstruct(contrast_mask, ext_intensity)
         ext_mask = np.logical_and(inner_mask, np.logical_or(ext_contrast, ext_intensity))
         spot_size = np.sum(ext_mask)
         has_beads = spot_size > (4800 + 1000 * (thresholds[best_thres] < 5))
@@ -604,6 +623,14 @@ def detect_spot_mesc(chamber, debug=False):
         plt.imshow(contrast_mask)
         plt.title(conclusions[has_beads])
     return has_beads
+
+
+def get_area_of_connected_components(mask):
+    """ Calculate area of all connected components in mask """
+
+    contours, _ = cv2.findContours(mask.astype('uint8'), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    return map(lambda c: cv2.contourArea(c), contours)
+
 
 
 def detect_badfill_mesc(chamber, reference_chamber, debug=False):
@@ -645,10 +672,8 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     if not mesc_overflow & np.mean(diff_img[r < .9]) < 9:
         bubble_thres = min(15, 2 * np.mean(diff_img) + 5)
         bubble_mask = np.logical_and.reduce((diff_img < bubble_thres, r < .9, x < .25))
-        bubble_contours = cv2.findContours(bubble_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        bubble_areas = cv2.contourArea(bubble_contours)
-        bubble_area = np.sum(bubble_areas[np.logical_and(bubble_areas > 400, bubble_areas < 20000)])
-        mesc_overflow = 2 * (bubble_area > 250)
+        _, bubble_areas = bwareafilt(bubble_mask,range=(400, 20000))
+        mesc_overflow = 2 * (np.sum(bubble_areas) > 250)
 
     # If print output is desired
     # print conclusions[mesc_overflow]
@@ -760,7 +785,7 @@ def SanityChecker(image_path, blood_test=False):
     image_idx = 0
     openings, error = find_openings(image_paths[image_idx], blood_test)
     reference_opening_shape = np.array(openings[1].Img.shape)
-    result['Error'] = result['Error'] + error
+    result['Error'] += error
     bc_chamber = find_bc_chamber(openings[0])
     reference_mesc_chamber = find_mesc_chamber(openings[1])
     result['BcSpot'] = detect_spot_bc(bc_chamber)
@@ -769,8 +794,8 @@ def SanityChecker(image_path, blood_test=False):
     # Image 1
     image_idx = 1
     openings, error = find_openings(image_paths[image_idx], blood_test)
-    result['Error'] = result['Error'] + error
-    if np.any(np.abs(np.array(openings[1].Img.shape) - reference_opening_shape) > 20):  # TODO why is this marked
+    result['Error'] += error
+    if np.any(np.abs(openings[1].Img.shape - reference_opening_shape) > 20):
         mesc_chamber = find_mesc_chamber(openings[1])
     else:
         mesc_chamber = find_same_chamber(openings[1], reference_mesc_chamber)
