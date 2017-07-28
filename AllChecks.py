@@ -24,7 +24,7 @@ def find_openings(image_path, blood_also=False):
     error = ''
     setting = {'BcPositionExpected': (1330, 1823), 'MescPositionExpected': (1347, 2485),
                'Ofc2PositionExpected': (2300, 500), 'BSSPositionExpected': (2160, 2080),
-               'CutSide': [400, 400, 400, 800]}
+               'CutSide': [400, 400, 400, 600]}
     if blood_also:
         openings = [Opening('BC', setting['BcPositionExpected']), Opening('MESC', setting['MescPositionExpected']),
                     Opening('OFC2', setting['Ofc2PositionExpected']), Opening('BSS', setting['BSSPositionExpected'])]
@@ -47,9 +47,8 @@ def find_openings(image_path, blood_also=False):
         cut_side = setting['CutSide'][idx]
 
         # Cut ROI from image and use bottom hat to find darker opening
-        cut_range = range(-cut_side, cut_side + 1)
-        cut_out = image[[x + opening.PositionExpected[0] for x in cut_range]][:,
-                  [x + opening.PositionExpected[1] for x in cut_range]]
+        cut_out = image[opening.PositionExpected[0] - cut_side:opening.PositionExpected[0] + cut_side + 1,
+                  opening.PositionExpected[1] - cut_side:opening.PositionExpected[1] + cut_side + 1]
         bot_hat_image = cv2.morphologyEx(cut_out, cv2.MORPH_BLACKHAT, kernel_r200)
 
         # Make mask of middle of cutOut
@@ -72,7 +71,7 @@ def find_openings(image_path, blood_also=False):
             thres_projection_j = np.argwhere(np.any(thres_opening, axis=1))
             span_i = thres_projection_i.item(-1) - thres_projection_i.item(0)
             span_j = thres_projection_j.item(-1) - thres_projection_j.item(0)
-            if span_i > cut_side * 5 / 4 | span_j > cut_side * 5 / 4:
+            if span_i > cut_side * 5 / 4 or span_j > cut_side * 5 / 4:
                 thres *= 1.1
             else:
                 increase_thres = False
@@ -92,7 +91,7 @@ def find_openings(image_path, blood_also=False):
 
         # Check size
         elips_axis = np.array([np.size(opening.I), np.size(opening.J)])
-        if any(elips_axis > cut_side + 100) | any(elips_axis < cut_side - 100):
+        if any(elips_axis > cut_side + 100) or any(elips_axis < cut_side - 100):
             error = opening.Name + ' opening is wrong size. '
             # print 'Error: ' + error
 
@@ -230,7 +229,7 @@ def find_bc_chamber(opening, debug=False):
     top_edge[0:split_idx, 200:] = edge_mask[0:split_idx, 200:]
     bottom_edge[split_idx:, 200:] = edge_mask[split_idx:, 200:]
 
-    # Do Hough detection at upper/lower part & combine
+    # Do Hough detection at upper/lower part and combine
     set_top, circle_top = half_hough_detection(top_edge, good_range[0])
     set_bottom, circle_bottom = half_hough_detection(bottom_edge, good_range[1])
     set_combined = np.logical_and(set_top, set_bottom)
@@ -270,7 +269,7 @@ def find_bc_chamber(opening, debug=False):
 
 def imreconstruct(marker, mask):
     """Performs morphological reconstruction of the image marker under the image mask."""
-    return morphology.reconstruction(marker & mask, mask).astype('bool')
+    return morphology.reconstruction(np.logical_and(marker, mask), mask).astype('bool')
 
 def imgradient(img):
     """ Calculates the (Sobel) gradient magnitude of the image."""
@@ -286,6 +285,8 @@ def bwareafilt(mask, n=1, range = (0, np.inf)):
     areas = areas[inside_range_idx]
     keep_idx = area_idx[np.argsort(areas)[::-1][0:n]]
     kept_areas = areas[keep_idx-1]
+    if np.size(kept_areas) == 0:
+        kept_areas = np.array([0])
     if n == 1:
         kept_areas = kept_areas[0]
     kept_mask = np.isin(labels,keep_idx)
@@ -313,8 +314,8 @@ def half_hough_detection(mask, good_range):
     circle = (cy[0], cx[0], radii[0])
 
     # If circle outside good_range, sweep circle along i and look for overlap with mask
-    if circle[0] < good_range[0, 0] | circle[0] > good_range[1, 0] | \
-            circle[1] < good_range[0, 1] | circle[1] > good_range[1, 1]:
+    if circle[0] < good_range[0, 0] or  circle[0] > good_range[1, 0] or \
+            circle[1] < good_range[0, 1] or circle[1] > good_range[1, 1]:
         i_range = np.arange(good_range[0, 0], good_range[1, 0] + 1)
         i_mid = int(round(np.mean(i_range)))
         j_mid = int(round(np.size(mask, 1) / 2))
@@ -351,8 +352,8 @@ def detect_spot_bc(chamber, debug=False):
     """
 
     setting = {'UseRed': True, 'UseLR': False}
-    roi_poly = np.array([[(68, 43), (96, 156), (177, 234), (273, 265), (214, 302), (132, 294), (16, 240),
-                         (10, 120), (68, 43)]], dtype=np.int32)
+    roi_poly = np.array([(68, 43), (96, 156), (177, 234), (273, 265), (214, 302), (132, 294), (16, 240),
+                         (10, 120), (68, 43)], dtype=np.int32)
     conclusions = ['Spot NOT detected in BC chamber.', 'Spot detected in BC chamber.']
 
     # Define mask for extraction the points inside the ROI
@@ -419,7 +420,7 @@ def image_roi_features(image_vector):
     feature[5] = np.mean(image_vector)
     feature[6] = np.std(image_vector)
     feature[7] = scipy.stats.stats.skew(image_vector)
-    feature[8] = scipy.stats.stats.kurtosis(image_vector,fisher=False)
+    feature[8] = scipy.stats.stats.kurtosis(image_vector, fisher=False)
 
     # Calculate distance to similar gauss
     gauss = 1 / np.sqrt(2 * np.pi * feature[6] ** 2) * np.exp(
@@ -449,8 +450,8 @@ def check_double_peak(image_vector):
         peak_1 = count[idx_1]
         idx_2 = np.argmax(count[i + 3:])
         peak_2 = count[i + 3:][idx_2]
-        double_peak[i] = ((min([peak_1, peak_2]) > count[i]) & (peak_2 / peak_1 > .1) & (peak_1 / peak_2 > .1) & (
-        min([peak_1, peak_2]) / (1e-7 + min(count[idx_1:idx_2 + i + 3])) > 2))
+        double_peak[i] = min([peak_1, peak_2]) > count[i] and peak_2 / peak_1 > .1 and peak_1 / peak_2 > .1 and \
+        min([peak_1, peak_2]) / (1e-7 + min(count[idx_1:idx_2 + i + 3])) > 2
     return np.any(double_peak)
 
 
@@ -470,9 +471,9 @@ def detect_blood_bss(opening, debug=False):
     conclusions = ['Blood NOT detected in BSS chamber.', 'Blood detected in BSS chamber.']
 
     # Use polygon mask to see if region is darker
-    mask = np.zeros(opening.Img.shape, dtype=bool)
+    mask = np.zeros(opening.Img.shape, dtype='uint8')
     cv2.fillConvexPoly(mask, roi_poly, True)
-    blood_present = np.mean(opening.Img[mask]) / np.mean(opening.Img) < setting['Ratio']
+    blood_present = np.mean(opening.Img[mask.astype('bool')]) / np.mean(opening.Img) < setting['Ratio']
 
     # If print output is desired
     # print conclusions[blood_present]
@@ -481,7 +482,7 @@ def detect_blood_bss(opening, debug=False):
         plt.figure()
         ax = plt.gca()
         plt.imshow(opening.Img)
-        poly = plt.Polygon(roi_poly[0], ec='r', fc='none')
+        poly = plt.Polygon(roi_poly, ec='r', fc='none')
         ax.add_patch(poly)
         plt.title(conclusions[blood_present])
     return blood_present
@@ -502,9 +503,9 @@ def detect_blood_ofc2(opening, debug=False):
     conclusions = ['Blood NOT detected in OFC2 chamber.', 'Blood detected in OFC2 chamber.']
 
     # Use polygon mask to see if region is darker
-    mask = np.zeros(opening.Img.shape, dtype=bool)
+    mask = np.zeros(opening.Img.shape, dtype='uint8')
     cv2.fillConvexPoly(mask, roi_poly, True)
-    blood_present = np.mean(opening.Img[mask]) / np.mean(opening.Img) < setting['Ratio']
+    blood_present = np.mean(opening.Img[mask.astype('bool')]) / np.mean(opening.Img) < setting['Ratio']
 
     # If print output is desired
     # print conclusions[blood_present]
@@ -513,7 +514,7 @@ def detect_blood_ofc2(opening, debug=False):
         plt.figure()
         ax = plt.gca()
         plt.imshow(opening.Img)
-        poly = plt.Polygon(roi_poly[0], ec='r', fc='none')
+        poly = plt.Polygon(roi_poly, ec='r', fc='none')
         ax.add_patch(poly)
         plt.title(conclusions[blood_present])
     return blood_present
@@ -603,7 +604,7 @@ def detect_spot_mesc(chamber, debug=False):
     solidity = float(eroded_size) / spot_size
 
     # Investigate by extending the mask while keeping lower bound on contrast or intensity
-    if (not has_beads) & (((spot_size > 2500) & (solidity > .5)) | ((spot_size > 4500) & (solidity > .45))):
+    if not has_beads and ((spot_size > 2500 and solidity > .5) or (spot_size > 4500 and solidity > .45)):
         ext_contrast = chamber_contrast >= np.min(chamber_contrast[contrast_mask])
         ext_contrast = imreconstruct(contrast_mask, ext_contrast)
         ext_intensity = chamber.Img >= np.min(chamber.Img[contrast_mask])
@@ -653,23 +654,24 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     chm_img, ref_img = get_overlap_images(chamber.Img, reference_chamber.Img)
     translation = corr2d(chm_img, ref_img)
     # TODO Translation = -[Translation(2), Translation(1)] might be needed
-    r = get_overlap_images(chamber.R, reference_chamber.Img)
-    x = get_overlap_images(chamber.X, reference_chamber.Img)
-    r = get_overlap_images(r, ref_img, translation)
-    x = get_overlap_images(x, ref_img, translation)
+    # TODO tranlation smaller than matlab for 1 example. What about example with large step
+    r, _ = get_overlap_images(chamber.R, reference_chamber.Img)
+    x, _ = get_overlap_images(chamber.X, reference_chamber.Img)
+    r, _ = get_overlap_images(r, ref_img, translation)
+    x, _ = get_overlap_images(x, ref_img, translation)
     chm_img, ref_img = get_overlap_images(chm_img, ref_img, translation)
 
     # Calculate difference between images, and row averages
-    diff_img = chm_img - ref_img
+    diff_img = (chm_img.astype('int16') - ref_img).clip(min=0)
     diff_img[r > setting['RCutOff']] = 0
-    average_diff = np.sum(diff_img, axis=1) / np.sum(r > setting['RCutOff'], axis=1)
+    average_diff = np.sum(diff_img, axis=0) / (.1 + np.sum(r <= setting['RCutOff'], axis=0))
 
     # Overflow is high intensity line and not last pixels
     max_idx = np.argmax(average_diff)
-    mesc_overflow = average_diff[max_idx] > 30 & np.sum(average_diff[max_idx:] > 0) > 4
+    mesc_overflow = average_diff[max_idx] > 30 and np.sum(average_diff[max_idx:] > 0) > 4
 
     # Look for mesc bubble at certain position and size
-    if not mesc_overflow & np.mean(diff_img[r < .9]) < 9:
+    if not mesc_overflow and np.mean(diff_img[r < .9]) < 9:
         bubble_thres = min(15, 2 * np.mean(diff_img) + 5)
         bubble_mask = np.logical_and.reduce((diff_img < bubble_thres, r < .9, x < .25))
         _, bubble_areas = bwareafilt(bubble_mask,range=(400, 20000))
@@ -706,7 +708,7 @@ def get_overlap_images(img1, img2, translation=None):
 
     if translation is None:
         translation = [0, 0]
-    translation = np.round(translation)
+    translation = np.round(translation).astype('int')
 
     # Define outputs to prevent changing inputs
     out_img1 = img1.copy()
@@ -716,9 +718,9 @@ def get_overlap_images(img1, img2, translation=None):
     for d in range(2):
         size1 = np.size(img1, d)
         size2 = np.size(img2, d)
-        size_move = round((size2 - size1) / 2)
-        side1_idx = np.array(set(range(size1)) & set(np.arange(0, size2) - size_move + translation[d]))
-        side2_idx = np.array(set(np.arange(0, size1) + size_move - translation[d]) & set(range(size2)))
+        size_move = int(round((size2 - size1) / 2))
+        side1_idx = np.intersect1d(range(size1), np.arange(0, size2) - size_move + translation[d], assume_unique=True)
+        side2_idx = np.intersect1d(np.arange(0, size1) + size_move - translation[d], range(size2), assume_unique=True)
         if d == 0:
             out_img1 = out_img1[side1_idx, :]
             out_img2 = out_img2[side2_idx, :]
@@ -742,11 +744,10 @@ def corr2d(img1, img2, max_movement=12):
     """
 
     # Calculate fft based 2d cross-correlation
-    xcorr2d = scipy.signal.fftconvolve(img1, img2[::-1, ::-1])
-    # TODO check if similar to XCORR2D if not: https://github.com/keflavich/agpy/blob/master/agpy/cross_correlation.py
+    xcorr2d = scipy.signal.fftconvolve(img1, img2[::-1, ::-1],mode='same')
 
     # Calculate image midpoints
-    mid_points = np.floor(np.array(np.shape(img1)) / 2)
+    mid_points = np.floor(np.array(np.shape(xcorr2d)) / 2).astype('int')
 
     # Crop out 25x25 pixels around midpoint of xcorr result
     xcorr2d_crop = xcorr2d[mid_points[0] - max_movement:mid_points[0] + max_movement + 1,
@@ -755,20 +756,23 @@ def corr2d(img1, img2, max_movement=12):
     # Get maximum indexes and recalculate to full image coordinates
     i_idx, j_idx = np.unravel_index(xcorr2d_crop.argmax(), xcorr2d_crop.shape)
     i_idx = i_idx + mid_points[0] - max_movement
-    j_idx = j_idx + mid_points[1] - max_movement  # TODO is -1 needed?
+    j_idx = j_idx + mid_points[1] - max_movement
 
     n_fit = 3
     delta_ij = np.array([0, 0])
-    if i_idx >= n_fit & j_idx >= n_fit & i_idx + n_fit < np.size(xcorr2d, 1) & j_idx + n_fit < np.size(xcorr2d, 2):
+    if i_idx >= n_fit and j_idx >= n_fit and i_idx + n_fit < np.size(xcorr2d, 0) and j_idx + n_fit < np.size(xcorr2d, 1):
         # Fit data to p(0) + p(1)*x + p(2)*y + p(3)*x^2 + p(4)*xy + p(5)*y^2 and get top point
-        fit_data = np.log(xcorr2d[i_idx - n_fit:i_idx + n_fit, j_idx - n_fit:j_idx + n_fit])
-        idx_i, idx_j = np.meshgrid(np.arange(-n_fit, n_fit + 1), np.arange(-n_fit, n_fit + 1))  # TODO check this
-        p = np.linalg.lstsq(np.array([np.ones(idx_i), idx_i, idx_j, idx_i ** 2, idx_i * idx_j, idx_j ** 2]).T, fit_data)[0]
-        delta_ij = np.array([2 * p[5] * p[1] - p[2] * p[4], 2 * p[2] * p[3] - p[1] * p[4]]) / (
+        fit_data = np.log(xcorr2d[i_idx - n_fit:i_idx + n_fit + 1, j_idx - n_fit:j_idx + n_fit + 1])
+        idx_j, idx_i = np.meshgrid(np.arange(-n_fit, n_fit + 1), np.arange(-n_fit, n_fit + 1))
+        idx_j = idx_j.flatten()
+        idx_i = idx_i.flatten()
+        p = np.linalg.lstsq(np.array([np.ones(np.shape(idx_i)), idx_i, idx_j, idx_i ** 2, idx_i * idx_j, idx_j ** 2]).T,
+                            fit_data.flatten())[0]
+        delta_ij = np.array([2 * p[2] * p[3] - p[1] * p[4], 2 * p[5] * p[1] - p[2] * p[4]]) / (
         p[4] ** 2 - 4 * p[5] * p[3])
 
     # Sanity check
-    if np.any(np.abs(delta_ij) > 1.5):  # TODO why is this marked incorrect
+    if np.any(np.abs(delta_ij) > 1.5):
         delta_ij = np.array([0, 0])
 
     # Recalculate midpoint and make it relative
@@ -801,7 +805,7 @@ def SanityChecker(image_path, blood_test=False):
         mesc_chamber = find_same_chamber(openings[1], reference_mesc_chamber)
     result['MescProblem'] = detect_badfill_mesc(mesc_chamber, reference_mesc_chamber)
     if blood_test:
-        result['BloodPresent'] = detect_blood_ofc2(openings[2]) & detect_blood_bss(openings[3])
+        result['BloodPresent'] = detect_blood_ofc2(openings[2]) and detect_blood_bss(openings[3])
 
     print 'Sanity checker finished'
     return result.items()
@@ -851,15 +855,16 @@ if __name__ == "__main__":
     # Windows: image_folder = 'E:\Google Drev\BluSense\Image Library_PlasmaSerum\Correct procedure_1'
     # Windows2: image_folder = 'C:\Users\310229518\Google Drive\BluSense\Image Library_PlasmaSerum\Correct procedure_1'
     # Linux: image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
-    image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
+    #image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
+    image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_Whole blood/B_Correct procedure_1'
     image_paths = glob.glob(image_folder + '/*.jpg')
     n_images = len(image_paths)
-    if (n_images != 3) & (n_images != 5):
+    if n_images != 3 and n_images != 5:
         print 'Error: Not 3 or 5 images.'
     else:
         if(n_images == 5):
             image_paths = [image_paths[0], image_paths[2], image_paths[4]]
-        SanityChecker(image_paths)
+        SanityChecker(image_paths, True)
 
 
     # Install instructions for Anaconda 3.6
