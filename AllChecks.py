@@ -520,7 +520,7 @@ def detect_blood_ofc2(opening, debug=False):
     return blood_present
 
 
-def detect_spot_mesc(chamber, debug=False):
+def detect_spot_mesc_old(chamber, debug=False):
     """ Detect beads spot in MESC chamber.
 
     Look for a magnetic beads spot either using a computer vision based intensitiy method,
@@ -632,6 +632,120 @@ def get_area_of_connected_components(mask):
     contours, _ = cv2.findContours(mask.astype('uint8'), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     return map(lambda c: cv2.contourArea(c), contours)
 
+
+def detect_spot_mesc(chamber, reference_chamber, debug = False):
+    """ Detect beads spot in MESC chamber.
+
+    Look for a magnetic beads spot using the intensity difference between the initial chamber
+    and the plasma filled chamber.
+
+    :param chamber: MESC chamber where spot should have disappeared.
+    :param reference_chamber: MESC chamber to detect spot in.
+    :param debug: Bool, if True visual plot to understand algorithm steps.
+    :return: Bool, if True beads spot was detected.
+    """
+
+    setting = {'CompensateAverage': True, 'RatioThres': 0.14, 'UseLinearCorrection': True, 'UseRadialCorrection': True,
+               'UseMedianFilter': True}
+    conclusions = ['Beads NOT detected in MESC chamber.', 'Beads detected in MESC chamber.']
+
+    #First try simple detection
+    has_beads = simple_bead_spot_detection(reference_chamber)
+    if has_beads:
+        return has_beads - simple_bead_spot_detection(chamber)
+
+    # Compensate out intensity slopes
+    if setting['UseLinearCorrection']:
+        LinearCorrection(chamber)
+        LinearCorrection(reference_chamber)
+
+    # Compensate out radial intensities
+    if setting['UseRadialCorrection']:
+        RadialCorrection(chamber)
+        RadialCorrection(reference_chamber)
+
+    # Align chamber images and radius image
+    chm_img, ref_img = get_overlap_images(chamber.Img, reference_chamber.Img)
+    translation = corr2d(chm_img, ref_img)
+    # TODO is -[T(2), T(1)] needed here
+    r, _ = get_overlap_images(chamber.R, reference_chamber.R)
+    r, _ = get_overlap_images(r, ref_img, translation)
+    chm_img, ref_img = get_overlap_images(chm_img, ref_img, translation)
+
+    # Perform filtering to reduce noise and level out mean offset
+    if setting['UseMedianFilter']:
+        chm_img = cv2.medianBlur(chm_img, 3)
+        ref_img = cv2.medianBlur(ref_img, 3)
+
+    if setting['CompensateAverage']:
+        mask = np.logical_and(r<.9, r>.5)
+        compensation = (np.mean(chm_img[mask]) - np.mean(ref_img[mask])).clip(min=-2)
+    else:
+        compensation = 0
+
+    # Get difference between chambers and detect beads
+    diff_img = (ref_img.astype('int16')+compensation - chm_img).clip(min=0)
+    ratio = np.mean(diff_img[r < .75] > 4)
+    has_beads = ratio > setting['RatioThres']
+
+    # Also try to find centroid of largest object. Go to centroid calc ratio in vicinity
+    if not has_beads and ratio > .1:
+        mask = np.logical_and(diff_img > 4, r < .75)
+        j, i = np.meshgrid(np.arange(1, np.size(mask,1) + 1), np.arange(1, np.size(mask,0) + 1))
+        center_mask = np.logical_and((i - np.mean(i[mask]))**2 + (j - np.mean(j[mask]))**2 < 70**2, r < .75)
+        new_ratio = np.sum(mask[center_mask]).astype('f') / np.sum(center_mask)
+        has_beads = new_ratio > 2*setting['RatioThres']
+
+    if debug:
+        plt.figure()
+        plt.subplot(2, 2, 1)
+        plt.imshow(diff_img)
+        plt.title(conclusions[has_beads])
+        plt.subplot(2, 2, 2)
+        plt.imshow(np.logical_and(diff_img > 4, r < .75))
+        plt.subplot(2, 2, 3)
+        plt.imshow(ref_img)
+        plt.subplot(2, 2, 4)
+        plt.imshow(chm_img)
+    return has_beads
+
+
+def simple_bead_spot_detection(chamber):
+    """ Try to identify if bead spot is present based on area and solidity for intensity thresholding """
+
+    inner = chamber.R < .75
+    spot = [np.NaN]*7
+    background = round(np.mean(chamber.Img[chamber.R < .8]))
+    kernel_r3 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    for i in range(7):
+        intensity_mask = np.logical_and(chamber.Img > (i + background), inner)
+        intensity_mask = segmentation.clear_border(np.logical_or(intensity_mask, np.logical_not(inner)))
+        only_biggest, biggest_area = bwareafilt(intensity_mask)
+        area_ratio = biggest_area.astype('f') / np.sum(inner)
+        clump_ratio = biggest_area.astype('f') / np.sum(intensity_mask)
+        eroded_area = np.sum(cv2.erode(only_biggest.astype('uint8'), kernel_r3))
+        solidity = eroded_area.astype('f') / biggest_area
+        spot[i] = clump_ratio > .75 and area_ratio >.1 and solidity > .4
+    return np.any(spot)
+
+
+def LinearCorrection(chamber):
+    """ Compensate out intensity slopes"""
+    inner_mask = chamber.R < .9
+    o = np.ones(np.sum(inner_mask))
+    coef = np.linalg.lstsq(np.array([o, chamber.X[inner_mask], chamber.Y[inner_mask]]).T, chamber.Img[inner_mask])[0]
+    chamber.Img = np.round(chamber.Img - min(0, coef[1]) * chamber.X - min(0, coef[2]) * chamber.Y).astype('uint8')
+
+
+def RadialCorrection(chamber):
+    """ Compensate out higher intensity in SW corner"""
+    light_angle = 3*np.pi/4
+    chamber_angle = np.angle(chamber.X + 1j*chamber.Y)
+    mask = np.logical_and.reduce((chamber.R < .9, chamber.R > .5, np.cos(chamber_angle + light_angle) > 0))
+    o = np.ones(np.sum(mask))
+    coef = np.linalg.lstsq(np.array([o, np.cos(chamber_angle[mask] + light_angle)]).T, chamber.Img[mask])[0].clip(min=0)
+    chamber.Img = np.round(chamber.Img - (coef[1] * np.cos(chamber_angle + light_angle) \
+                                          * np.cos(np.pi / 2 * (chamber.R - 1))).clip(min=0)).astype('uint8')
 
 
 def detect_badfill_mesc(chamber, reference_chamber, debug=False):
@@ -793,7 +907,7 @@ def SanityChecker(image_path, blood_test=False):
     bc_chamber = find_bc_chamber(openings[0])
     reference_mesc_chamber = find_mesc_chamber(openings[1])
     result['BcSpot'] = detect_spot_bc(bc_chamber)
-    result['MescSpot'] = detect_spot_mesc(reference_mesc_chamber)
+    # result['MescSpot'] = detect_spot_mesc(reference_mesc_chamber)
 
     # Image 1
     image_idx = 1
@@ -804,8 +918,12 @@ def SanityChecker(image_path, blood_test=False):
     else:
         mesc_chamber = find_same_chamber(openings[1], reference_mesc_chamber)
     result['MescProblem'] = detect_badfill_mesc(mesc_chamber, reference_mesc_chamber)
+    if result['MescProblem'] == 0:
+        result['MescProblem'] = detect_spot_mesc(mesc_chamber, reference_mesc_chamber) #should be at image 2
     if blood_test:
         result['BloodPresent'] = detect_blood_ofc2(openings[2]) and detect_blood_bss(openings[3])
+
+
 
     print 'Sanity checker finished'
     return result.items()
@@ -852,11 +970,9 @@ class Chamber:
 
 if __name__ == "__main__":
 
-    # Windows: image_folder = 'E:\Google Drev\BluSense\Image Library_PlasmaSerum\Correct procedure_1'
     # Windows2: image_folder = 'C:\Users\310229518\Google Drive\BluSense\Image Library_PlasmaSerum\Correct procedure_1'
     # Linux: image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
-    #image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
-    image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_Whole blood/B_Correct procedure_1'
+    image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
     image_paths = glob.glob(image_folder + '/*.jpg')
     n_images = len(image_paths)
     if n_images != 3 and n_images != 5:
