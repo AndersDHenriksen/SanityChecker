@@ -1,9 +1,10 @@
 import numpy as np
+from skimage import morphology, measure, draw, segmentation, transform
+import astropy.convolution
+# packages below this line are not crucial
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import cv2
-from skimage import morphology, restoration, measure, draw, segmentation, filters, transform
-import scipy.signal
 import scipy.stats.stats
 import glob
 
@@ -48,7 +49,7 @@ def find_openings(image_path, blood_also=False):
 
         # Cut ROI from image and use bottom hat to find darker opening
         cut_out = image[opening.PositionExpected[0] - cut_side:opening.PositionExpected[0] + cut_side + 1,
-                  opening.PositionExpected[1] - cut_side:opening.PositionExpected[1] + cut_side + 1]
+                        opening.PositionExpected[1] - cut_side:opening.PositionExpected[1] + cut_side + 1]
         bot_hat_image = cv2.morphologyEx(cut_out, cv2.MORPH_BLACKHAT, kernel_r200)
 
         # Make mask of middle of cutOut
@@ -61,12 +62,12 @@ def find_openings(image_path, blood_also=False):
             thres_image = np.array(bot_hat_image > thres, dtype=np.uint8)
             thres_image = cv2.morphologyEx(thres_image, cv2.MORPH_OPEN, kernel_r25)
             thres_image = cv2.morphologyEx(thres_image, cv2.MORPH_CLOSE, kernel_r25)
-            if not np.any(thres_image):
+            thres_opening = imreconstruct(opening_mask, thres_image)
+            if not np.any(thres_opening):
                 error = opening.Name + 'opening threshold increased too much. '
                 # print 'Error: ' + error  # This could be error/exception instead
                 continue
 
-            thres_opening = imreconstruct(opening_mask, thres_image)
             thres_projection_i = np.argwhere(np.any(thres_opening, axis=0))
             thres_projection_j = np.argwhere(np.any(thres_opening, axis=1))
             span_i = thres_projection_i.item(-1) - thres_projection_i.item(0)
@@ -267,20 +268,23 @@ def find_bc_chamber(opening, debug=False):
 
     return Chamber(opening, i_mean, j_mean, i_r, j_r)
 
+
 def imreconstruct(marker, mask):
     """Performs morphological reconstruction of the image marker under the image mask."""
     return morphology.reconstruction(np.logical_and(marker, mask), mask).astype('bool')
+
 
 def imgradient(img):
     """ Calculates the (Sobel) gradient magnitude of the image."""
     return np.sqrt(cv2.Sobel(img, cv2.CV_64F, 1, 0) ** 2 + cv2.Sobel(img, cv2.CV_64F, 0, 1) ** 2)
 
-def bwareafilt(mask, n=1, range = (0, np.inf)):
+
+def bwareafilt(mask, n=1, area_range=(0, np.inf)):
     """Extract objects from binary image by size """
-    labels = measure.label(mask.astype('uint8'),background=0)
-    area_idx = np.arange(1,np.max(labels) + 1)
+    labels = measure.label(mask.astype('uint8'), background=0)
+    area_idx = np.arange(1, np.max(labels) + 1)
     areas = np.array([np.sum(labels == i) for i in area_idx])
-    inside_range_idx = np.logical_and(areas >= range[0], areas <= range[1])
+    inside_range_idx = np.logical_and(areas >= area_range[0], areas <= area_range[1])
     area_idx = area_idx[inside_range_idx]
     areas = areas[inside_range_idx]
     keep_idx = area_idx[np.argsort(areas)[::-1][0:n]]
@@ -289,8 +293,8 @@ def bwareafilt(mask, n=1, range = (0, np.inf)):
         kept_areas = np.array([0])
     if n == 1:
         kept_areas = kept_areas[0]
-    kept_mask = np.isin(labels,keep_idx)
-    return (kept_mask, kept_areas)
+    kept_mask = np.isin(labels, keep_idx)
+    return kept_mask, kept_areas
 
 
 def half_hough_detection(mask, good_range):
@@ -314,7 +318,7 @@ def half_hough_detection(mask, good_range):
     circle = (cy[0], cx[0], radii[0])
 
     # If circle outside good_range, sweep circle along i and look for overlap with mask
-    if circle[0] < good_range[0, 0] or  circle[0] > good_range[1, 0] or \
+    if circle[0] < good_range[0, 0] or circle[0] > good_range[1, 0] or \
             circle[1] < good_range[0, 1] or circle[1] > good_range[1, 1]:
         i_range = np.arange(good_range[0, 0], good_range[1, 0] + 1)
         i_mid = int(round(np.mean(i_range)))
@@ -361,7 +365,7 @@ def detect_spot_bc(chamber, debug=False):
     cv2.fillConvexPoly(in_shadow_mask, roi_poly, True)
 
     if setting['UseRed']:
-        usefull_image = chamber.cImg[:, :, 2][in_shadow_mask>0]
+        usefull_image = chamber.cImg[:, :, 2][in_shadow_mask > 0]
     else:
         usefull_image = chamber.Img[in_shadow_mask]
 
@@ -451,7 +455,7 @@ def check_double_peak(image_vector):
         idx_2 = np.argmax(count[i + 3:])
         peak_2 = count[i + 3:][idx_2]
         double_peak[i] = min([peak_1, peak_2]) > count[i] and peak_2 / peak_1 > .1 and peak_1 / peak_2 > .1 and \
-        min([peak_1, peak_2]) / (1e-7 + min(count[idx_1:idx_2 + i + 3])) > 2
+            min([peak_1, peak_2]) / (1e-7 + min(count[idx_1:idx_2 + i + 3])) > 2
     return np.any(double_peak)
 
 
@@ -545,7 +549,7 @@ def detect_spot_mesc_old(chamber, debug=False):
                                          chamber.X[inner_mask].astype('f'), chamber.Y[inner_mask].astype('f')]).T,
                                chamber_contrast[inner_mask])[0]
         chamber_contrast = np.round(
-        chamber_contrast - min([0, coef[1]]) * chamber.X - min([0, coef[2]]) * chamber.Y).astype('uint8')
+            chamber_contrast - min([0, coef[1]]) * chamber.X - min([0, coef[2]]) * chamber.Y).astype('uint8')
 
     # Use Logistic regression and histogram to determine if beads spot
     if setting['UseLR']:
@@ -633,7 +637,7 @@ def get_area_of_connected_components(mask):
     return map(lambda c: cv2.contourArea(c), contours)
 
 
-def detect_spot_mesc(chamber, reference_chamber, debug = False):
+def detect_spot_mesc(chamber, reference_chamber, debug=False):
     """ Detect beads spot in MESC chamber.
 
     Look for a magnetic beads spot using the intensity difference between the initial chamber
@@ -649,25 +653,24 @@ def detect_spot_mesc(chamber, reference_chamber, debug = False):
                'UseMedianFilter': True}
     conclusions = ['Beads NOT detected in MESC chamber.', 'Beads detected in MESC chamber.']
 
-    #First try simple detection
+    # First try simple detection
     has_beads = simple_bead_spot_detection(reference_chamber)
     if has_beads:
         return has_beads - simple_bead_spot_detection(chamber)
 
     # Compensate out intensity slopes
     if setting['UseLinearCorrection']:
-        LinearCorrection(chamber)
-        LinearCorrection(reference_chamber)
+        linear_correction(chamber)
+        linear_correction(reference_chamber)
 
     # Compensate out radial intensities
     if setting['UseRadialCorrection']:
-        RadialCorrection(chamber)
-        RadialCorrection(reference_chamber)
+        radial_correction(chamber)
+        radial_correction(reference_chamber)
 
     # Align chamber images and radius image
     chm_img, ref_img = get_overlap_images(chamber.Img, reference_chamber.Img)
     translation = corr2d(chm_img, ref_img)
-    # TODO is -[T(2), T(1)] needed here
     r, _ = get_overlap_images(chamber.R, reference_chamber.R)
     r, _ = get_overlap_images(r, ref_img, translation)
     chm_img, ref_img = get_overlap_images(chm_img, ref_img, translation)
@@ -678,7 +681,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug = False):
         ref_img = cv2.medianBlur(ref_img, 3)
 
     if setting['CompensateAverage']:
-        mask = np.logical_and(r<.9, r>.5)
+        mask = np.logical_and(r < .9, r > .5)
         compensation = (np.mean(chm_img[mask]) - np.mean(ref_img[mask])).clip(min=-2)
     else:
         compensation = 0
@@ -691,7 +694,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug = False):
     # Also try to find centroid of largest object. Go to centroid calc ratio in vicinity
     if not has_beads and ratio > .1:
         mask = np.logical_and(diff_img > 4, r < .75)
-        j, i = np.meshgrid(np.arange(1, np.size(mask,1) + 1), np.arange(1, np.size(mask,0) + 1))
+        j, i = np.meshgrid(np.arange(1, np.size(mask, 1) + 1), np.arange(1, np.size(mask, 0) + 1))
         center_mask = np.logical_and((i - np.mean(i[mask]))**2 + (j - np.mean(j[mask]))**2 < 70**2, r < .75)
         new_ratio = np.sum(mask[center_mask]).astype('f') / np.sum(center_mask)
         has_beads = new_ratio > 2*setting['RatioThres']
@@ -725,11 +728,11 @@ def simple_bead_spot_detection(chamber):
         clump_ratio = biggest_area.astype('f') / np.sum(intensity_mask)
         eroded_area = np.sum(cv2.erode(only_biggest.astype('uint8'), kernel_r3))
         solidity = eroded_area.astype('f') / biggest_area
-        spot[i] = clump_ratio > .75 and area_ratio >.1 and solidity > .4
+        spot[i] = clump_ratio > .75 and area_ratio > .1 and solidity > .4
     return np.any(spot)
 
 
-def LinearCorrection(chamber):
+def linear_correction(chamber):
     """ Compensate out intensity slopes"""
     inner_mask = chamber.R < .9
     o = np.ones(np.sum(inner_mask))
@@ -737,14 +740,14 @@ def LinearCorrection(chamber):
     chamber.Img = np.round(chamber.Img - min(0, coef[1]) * chamber.X - min(0, coef[2]) * chamber.Y).astype('uint8')
 
 
-def RadialCorrection(chamber):
+def radial_correction(chamber):
     """ Compensate out higher intensity in SW corner"""
     light_angle = 3*np.pi/4
     chamber_angle = np.angle(chamber.X + 1j*chamber.Y)
     mask = np.logical_and.reduce((chamber.R < .9, chamber.R > .5, np.cos(chamber_angle + light_angle) > 0))
     o = np.ones(np.sum(mask))
     coef = np.linalg.lstsq(np.array([o, np.cos(chamber_angle[mask] + light_angle)]).T, chamber.Img[mask])[0].clip(min=0)
-    chamber.Img = np.round(chamber.Img - (coef[1] * np.cos(chamber_angle + light_angle) \
+    chamber.Img = np.round(chamber.Img - (coef[1] * np.cos(chamber_angle + light_angle)
                                           * np.cos(np.pi / 2 * (chamber.R - 1))).clip(min=0)).astype('uint8')
 
 
@@ -767,8 +770,6 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     # Calculate translation between images and overlaps
     chm_img, ref_img = get_overlap_images(chamber.Img, reference_chamber.Img)
     translation = corr2d(chm_img, ref_img)
-    # TODO Translation = -[Translation(2), Translation(1)] might be needed
-    # TODO tranlation smaller than matlab for 1 example. What about example with large step
     r, _ = get_overlap_images(chamber.R, reference_chamber.Img)
     x, _ = get_overlap_images(chamber.X, reference_chamber.Img)
     r, _ = get_overlap_images(r, ref_img, translation)
@@ -788,7 +789,7 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     if not mesc_overflow and np.mean(diff_img[r < .9]) < 9:
         bubble_thres = min(15, 2 * np.mean(diff_img) + 5)
         bubble_mask = np.logical_and.reduce((diff_img < bubble_thres, r < .9, x < .25))
-        _, bubble_areas = bwareafilt(bubble_mask,range=(400, 20000))
+        _, bubble_areas = bwareafilt(bubble_mask, area_range=(400, 20000))
         mesc_overflow = 2 * (np.sum(bubble_areas) > 250)
 
     # If print output is desired
@@ -858,14 +859,14 @@ def corr2d(img1, img2, max_movement=12):
     """
 
     # Calculate fft based 2d cross-correlation
-    xcorr2d = scipy.signal.fftconvolve(img1, img2[::-1, ::-1],mode='same')
+    xcorr2d = astropy.convolution.convolve_fft(img1, img2[::-1, ::-1], 'wrap')
 
     # Calculate image midpoints
     mid_points = np.floor(np.array(np.shape(xcorr2d)) / 2).astype('int')
 
     # Crop out 25x25 pixels around midpoint of xcorr result
     xcorr2d_crop = xcorr2d[mid_points[0] - max_movement:mid_points[0] + max_movement + 1,
-                   mid_points[1] - max_movement:mid_points[1] + max_movement + 1]
+                           mid_points[1] - max_movement:mid_points[1] + max_movement + 1]
 
     # Get maximum indexes and recalculate to full image coordinates
     i_idx, j_idx = np.unravel_index(xcorr2d_crop.argmax(), xcorr2d_crop.shape)
@@ -874,7 +875,8 @@ def corr2d(img1, img2, max_movement=12):
 
     n_fit = 3
     delta_ij = np.array([0, 0])
-    if i_idx >= n_fit and j_idx >= n_fit and i_idx + n_fit < np.size(xcorr2d, 0) and j_idx + n_fit < np.size(xcorr2d, 1):
+    if i_idx >= n_fit and j_idx >= n_fit and i_idx + n_fit < np.size(xcorr2d, 0) and \
+       j_idx + n_fit < np.size(xcorr2d, 1):
         # Fit data to p(0) + p(1)*x + p(2)*y + p(3)*x^2 + p(4)*xy + p(5)*y^2 and get top point
         fit_data = np.log(xcorr2d[i_idx - n_fit:i_idx + n_fit + 1, j_idx - n_fit:j_idx + n_fit + 1])
         idx_j, idx_i = np.meshgrid(np.arange(-n_fit, n_fit + 1), np.arange(-n_fit, n_fit + 1))
@@ -883,7 +885,7 @@ def corr2d(img1, img2, max_movement=12):
         p = np.linalg.lstsq(np.array([np.ones(np.shape(idx_i)), idx_i, idx_j, idx_i ** 2, idx_i * idx_j, idx_j ** 2]).T,
                             fit_data.flatten())[0]
         delta_ij = np.array([2 * p[2] * p[3] - p[1] * p[4], 2 * p[5] * p[1] - p[2] * p[4]]) / (
-        p[4] ** 2 - 4 * p[5] * p[3])
+                             p[4] ** 2 - 4 * p[5] * p[3])
 
     # Sanity check
     if np.any(np.abs(delta_ij) > 1.5):
@@ -893,43 +895,55 @@ def corr2d(img1, img2, max_movement=12):
     return delta_ij + np.array([i_idx, j_idx]) - mid_points
 
 
-def SanityChecker(image_path, blood_test=False):
+def sanity_checker(image_paths, blood_test=False):
     """ The main function managing images and tests. """
 
-    result = dict()
-    result['Error'] = ''
+    result = {'Error': '', 'BcSpot': None, 'MescSpot': None, 'MescProblem': None, 'BloodPresent': blood_test}
 
     # Image 0
     image_idx = 0
-    openings, error = find_openings(image_paths[image_idx], blood_test)
+    openings, result['Error'] = find_openings(image_paths[image_idx], blood_test)
+    if not result['Error'] == '':
+        return result
     reference_opening_shape = np.array(openings[1].Img.shape)
-    result['Error'] += error
     bc_chamber = find_bc_chamber(openings[0])
     reference_mesc_chamber = find_mesc_chamber(openings[1])
     result['BcSpot'] = detect_spot_bc(bc_chamber)
-    # result['MescSpot'] = detect_spot_mesc(reference_mesc_chamber)
 
     # Image 1
     image_idx = 1
-    openings, error = find_openings(image_paths[image_idx], blood_test)
-    result['Error'] += error
+    openings, result['Error'] = find_openings(image_paths[image_idx], blood_test)
+    if not result['Error'] == '':
+        return result
     if np.any(np.abs(openings[1].Img.shape - reference_opening_shape) > 20):
         mesc_chamber = find_mesc_chamber(openings[1])
     else:
         mesc_chamber = find_same_chamber(openings[1], reference_mesc_chamber)
     result['MescProblem'] = detect_badfill_mesc(mesc_chamber, reference_mesc_chamber)
-    if result['MescProblem'] == 0:
-        result['MescProblem'] = detect_spot_mesc(mesc_chamber, reference_mesc_chamber) #should be at image 2
     if blood_test:
         result['BloodPresent'] = detect_blood_ofc2(openings[2]) and detect_blood_bss(openings[3])
 
+    # Image 2
+    image_idx = 1
+    openings, result['Error'] = find_openings(image_paths[image_idx], blood_test)
+    if not result['Error'] == '':
+        return result
+    if np.any(np.abs(openings[1].Img.shape - reference_opening_shape) > 20):
+        mesc_chamber = find_mesc_chamber(openings[1])
+    else:
+        mesc_chamber = find_same_chamber(openings[1], reference_mesc_chamber)
+    if result['MescProblem'] == 0:
+        result['MescProblem'] = detect_badfill_mesc(mesc_chamber, reference_mesc_chamber)
+    if result['MescProblem'] == 0:
+        result['MescSPot'] = detect_spot_mesc(mesc_chamber, reference_mesc_chamber)
 
-
-    print 'Sanity checker finished'
-    return result.items()
+    return result
 
 
 class Opening:
+    """
+    Opening object to hold location and imagedata for the different label openings.
+    """
     Name = ''
     PositionExpected = (0, 0)
     I = np.zeros(0)
@@ -946,6 +960,9 @@ class Opening:
 
 
 class Chamber:
+    """
+    Chamber object to hold location and imagedata for the different chambers.
+    """
     Name = ''
     OpnI = np.zeros(0)
     OpnJ = np.zeros(0)
@@ -970,18 +987,25 @@ class Chamber:
 
 if __name__ == "__main__":
 
+    blood_test = False
     # Windows2: image_folder = 'C:\Users\310229518\Google Drive\BluSense\Image Library_PlasmaSerum\Correct procedure_1'
     # Linux: image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
-    image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
-    image_paths = glob.glob(image_folder + '/*.jpg')
+    image_folder = 'C:\\Users\\310229518\\Google Drive\\BluSense\\Image Library_PlasmaSerum\\New_Images_2\\D4_06-20170711092116'
+    image_paths = glob.glob(image_folder + '\\*.jpg')
     n_images = len(image_paths)
     if n_images != 3 and n_images != 5:
-        print 'Error: Not 3 or 5 images.'
-    else:
-        if(n_images == 5):
-            image_paths = [image_paths[0], image_paths[2], image_paths[4]]
-        SanityChecker(image_paths, True)
+        print -1
 
+    if n_images == 5:
+        image_paths = [image_paths[0], image_paths[2], image_paths[4]]
+
+    result = sanity_checker(image_paths, blood_test)
+    if not result['error'] == '':
+        print -1
+
+    out_bin = [result['BcSpot'], result['MescSpot'], result['MescProblem'] == 0, result['BloodPresent'] == blood_test]
+    out_int = sum([b*2**i for i, b in enumerate(out_bin)])
+    print out_int
 
     # Install instructions for Anaconda 3.6
     # conda update conda
@@ -992,6 +1016,7 @@ if __name__ == "__main__":
     # Other usefull comamnds:
     # source deactivate
     # conda remove -n cv -all
+    # conda update -n cv -all
     #
     # Now in PyCharm do
     # Select File, click Settings.
