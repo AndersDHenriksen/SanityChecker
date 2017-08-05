@@ -1,6 +1,7 @@
 import numpy as np
 from skimage import morphology, measure, draw, segmentation, transform
 import astropy.convolution
+import argparse
 # packages below this line are not crucial
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
@@ -924,7 +925,7 @@ def sanity_checker(image_paths, blood_test=False):
         result['BloodPresent'] = detect_blood_ofc2(openings[2]) and detect_blood_bss(openings[3])
 
     # Image 2
-    image_idx = 1
+    image_idx = 2
     openings, result['Error'] = find_openings(image_paths[image_idx], blood_test)
     if not result['Error'] == '':
         return result
@@ -935,7 +936,7 @@ def sanity_checker(image_paths, blood_test=False):
     if result['MescProblem'] == 0:
         result['MescProblem'] = detect_badfill_mesc(mesc_chamber, reference_mesc_chamber)
     if result['MescProblem'] == 0:
-        result['MescSPot'] = detect_spot_mesc(mesc_chamber, reference_mesc_chamber)
+        result['MescSpot'] = detect_spot_mesc(mesc_chamber, reference_mesc_chamber)
 
     return result
 
@@ -987,23 +988,39 @@ class Chamber:
 
 if __name__ == "__main__":
 
+    # Important Flags
     blood_test = False
-    # Windows2: image_folder = 'C:\Users\310229518\Google Drive\BluSense\Image Library_PlasmaSerum\Correct procedure_1'
-    # Linux: image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
-    image_folder = 'C:\\Users\\310229518\\Google Drive\\BluSense\\Image Library_PlasmaSerum\\New_Images_2\\D4_06-20170711092116'
-    image_paths = glob.glob(image_folder + '\\*.jpg')
+    use_local_images = False
+
+    # Load images
+    if use_local_images:
+        image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
+        image_paths = glob.glob(image_folder + '/*.jpg')
+    else:
+        parser = argparse.ArgumentParser()
+        parser.add_argument('image1')
+        parser.add_argument('image2')
+        parser.add_argument('image3')
+        args = parser.parse_args()
+        image_paths = [args.image1, args.image2, args.image3]
+
+    # Check number of images
     n_images = len(image_paths)
     if n_images != 3 and n_images != 5:
         print -1
-
     if n_images == 5:
         image_paths = [image_paths[0], image_paths[2], image_paths[4]]
 
+    # Run main sanity checks function
     result = sanity_checker(image_paths, blood_test)
-    if not result['error'] == '':
+
+    # Check for error
+    if not result['Error'] == '':
         print -1
 
-    out_bin = [result['BcSpot'], result['MescSpot'], result['MescProblem'] == 0, result['BloodPresent'] == blood_test]
+    # Convert result dict. to unique integer. 0 = no problems
+    out_bin = [not result['BcSpot'], not result['MescSpot'], result['MescProblem'] > 0,
+               result['BloodPresent'] != blood_test]
     out_int = sum([b*2**i for i, b in enumerate(out_bin)])
     print out_int
 
