@@ -289,7 +289,7 @@ def bwareafilt(mask, n=1, area_range=(0, np.inf)):
     area_idx = area_idx[inside_range_idx]
     areas = areas[inside_range_idx]
     keep_idx = area_idx[np.argsort(areas)[::-1][0:n]]
-    kept_areas = areas[keep_idx-1]
+    kept_areas = areas[np.argsort(areas)[::-1][0:n]]
     if np.size(kept_areas) == 0:
         kept_areas = np.array([0])
     if n == 1:
@@ -863,7 +863,7 @@ def corr2d(img1, img2, max_movement=12):
     xcorr2d = astropy.convolution.convolve_fft(img1, img2[::-1, ::-1], 'wrap')
 
     # Calculate image midpoints
-    mid_points = np.floor(np.array(np.shape(xcorr2d)) / 2).astype('int')
+    mid_points = (np.array(np.shape(xcorr2d)) - 1) / 2
 
     # Crop out 25x25 pixels around midpoint of xcorr result
     xcorr2d_crop = xcorr2d[mid_points[0] - max_movement:mid_points[0] + max_movement + 1,
