@@ -1,34 +1,37 @@
-import pytest
 import AllChecks as qc
 import numpy as np
 from skimage import measure, data
 import os
 import matplotlib.pyplot as plt # To help making debugging easier
 
+
 def test_bwareafilt():
     """
     Test function for bwareafilt
     """
-    #Define list to store expected and actual result
-    expected_area = [np.NaN]*5; expected_mask = [np.NaN]*5; actual_mask = [np.NaN]*5; actual_area = [np.NaN]*5
+    # Define list to store expected and actual result
+    expected_area = [np.NaN]*5
+    expected_mask = [np.NaN]*5
+    actual_mask = [np.NaN]*5
+    actual_area = [np.NaN]*5
 
-    #Define test image
-    test_image = np.array([[1, 1, 0, 1, 1],[1, 0, 0, 0, 1], [1, 0, 1, 0, 1],[1, 0, 0, 0, 0], [0, 0, 1, 1, 0]],
+    # Define test image
+    test_image = np.array([[1, 1, 0, 1, 1], [1, 0, 0, 0, 1], [1, 0, 1, 0, 1], [1, 0, 0, 0, 0], [0, 0, 1, 1, 0]],
                           dtype='bool')
     label_image = measure.label(test_image.astype('uint8'), background=0)
 
     # Test  0. Default behavior
-    expected_mask[0]= label_image == 1
+    expected_mask[0] = label_image == 1
     expected_area[0] = np.sum(label_image == 1)
     actual_mask[0], actual_area[0] = qc.bwareafilt(test_image)
 
     # Test 1. Keep zero objects
-    expected_mask[1] = np.zeros(np.shape(label_image),dtype='bool')
+    expected_mask[1] = np.zeros(np.shape(label_image), dtype='bool')
     expected_area[1] = 0
     actual_mask[1], actual_area[1] = qc.bwareafilt(test_image, 0)
 
     # Test 2. Keep two largest objects
-    expected_mask[2]= np.logical_or(label_image == 1, label_image == 2)
+    expected_mask[2] = np.logical_or(label_image == 1, label_image == 2)
     expected_area[2] = np.array([5, 4])
     actual_mask[2], actual_area[2] = qc.bwareafilt(test_image, 2)
 
@@ -54,14 +57,15 @@ def test_corr2d():
     """
 
     # Define list to store expected and actual result
-    expected_transition = [np.NaN]*5; actual_transition = [np.NaN]*5
+    expected_transition = [np.NaN]*5
+    actual_transition = [np.NaN]*5
 
     # Load test image and crop at different locations
     full_image = data.coins()
     crop_0 = full_image[10: 90, 300:380]
     crop_1 = full_image[20:100, 300:380]
     crop_2 = full_image[10: 90, 290:370]
-    crop_3 = full_image[ 0: 80, 280:360]
+    crop_3 = full_image[00: 80, 280:360]
     crop_4 = full_image[11: 90, 301:380]
 
     # Test 0. No movement for images with even side length
@@ -85,7 +89,7 @@ def test_corr2d():
     actual_transition[4] = qc.corr2d(crop_0, crop_3, max_movement=25)
 
     # Run comparison
-    assert np.all(np.abs(expected_transition - np.array(actual_transition))<1)
+    assert np.all(np.abs(expected_transition - np.array(actual_transition)) < 1)
 
 
 def test_get_overlap_images():
@@ -94,10 +98,11 @@ def test_get_overlap_images():
     """
 
     # Define list to store expected and actual result
-    expected_images = [np.NaN]*4; actual_images = [np.NaN]*4
+    expected_images = [np.NaN]*4
+    actual_images = [np.NaN]*4
 
     # Make test images
-    j, i = np.meshgrid(np.arange(0,6), np.arange(0,6))
+    j, i = np.meshgrid(np.arange(0, 6), np.arange(0, 6))
     img1 = i + j
     img2 = -img1
 
@@ -106,7 +111,7 @@ def test_get_overlap_images():
     actual_images[0] = qc.get_overlap_images(img1, img2)
 
     # Test 1. Reduced size of image 2
-    expected_images[1] = (img1[1:5,1:5], img2[:4, :4])
+    expected_images[1] = (img1[1:5, 1:5], img2[:4, :4])
     actual_images[1] = qc.get_overlap_images(img1, img2[:4, :4])
 
     # Test 2. Include translation
@@ -114,7 +119,7 @@ def test_get_overlap_images():
     actual_images[2] = qc.get_overlap_images(img1, img2, (1, -1))
 
     # Test 3. Make translation larger than images
-    expected_images[3] = (np.zeros((0,6),'int'), np.zeros((0,6),'int'))
+    expected_images[3] = (np.zeros((0, 6), 'int'), np.zeros((0, 6), 'int'))
     actual_images[3] = qc.get_overlap_images(img1, img2, (10, 0))
 
     # Run comparison
@@ -129,14 +134,15 @@ def test_imgradient():
     """
 
     # Define list to store expected and actual result
-    expected_images = [np.NaN]*4; actual_images = [np.NaN]*4
+    expected_images = [np.NaN]*4
+    actual_images = [np.NaN]*4
 
     # Make test image
     j, i = np.meshgrid(np.arange(0, 8), np.arange(0, 8))
     test_image = np.logical_or(i == 2, i == 5).astype('uint8')
 
     # Test 0. Image with constant 170 value
-    expected_images[0] = np.zeros((10, 10),'uint8')
+    expected_images[0] = np.zeros((10, 10), 'uint8')
     actual_images[0] = qc.imgradient(170*np.ones((10, 10), 'uint8'))
 
     # Test 1. Image with horizontal bars
@@ -156,6 +162,67 @@ def test_imgradient():
         assert np.all(expected_images[i] == actual_images[i])
 
 
+def test_imreconstruct():
+    """
+    Test function for imreconstruct
+    """
+
+    # Define list to store expected and actual result
+    expected_mask = [np.NaN] * 3
+    actual_mask = [np.NaN] * 3
+
+    test_mask = np.array([[1, 1, 0, 1, 1], [1, 0, 0, 0, 1], [1, 0, 1, 0, 1], [1, 0, 0, 0, 0], [0, 0, 1, 1, 0]],
+                         dtype='bool')
+    label_image = measure.label(test_mask.astype('uint8'), background=0)
+
+    # Test 0. Mask with zero pixels
+    marker = np.zeros((5, 5), dtype='bool')
+    marker[-1, -1] = True
+    expected_mask[0] = np.zeros((5, 5), dtype='bool')
+    actual_mask[0] = qc.imreconstruct(marker, test_mask)
+
+    # Test 1. Mask with one pixel
+    marker = np.zeros((5, 5), dtype='bool')
+    marker[0, 0] = True
+    expected_mask[1] = label_image == 1
+    actual_mask[1] = qc.imreconstruct(marker, test_mask)
+
+    # Test 2. Marker with filled inner region
+    marker = np.zeros((5, 5), dtype='bool')
+    marker[1:3, 1:3] = True
+    expected_mask[2] = label_image == 3
+    actual_mask[2] = qc.imreconstruct(marker, test_mask)
+
+    # Run comparison
+    for i in range(len(actual_mask)):
+        assert np.all(expected_mask[i] == actual_mask[i])
+
+
+def test_maxspan():
+    """
+    Test function for maxspan
+    """
+
+    # Define list to store expected and actual result
+    expected_length = [np.NaN] * 3
+    actual_length = [np.NaN] * 3
+
+    # Test 0. No True
+    expected_length[0] = 0
+    actual_length[0] = qc.max_span(np.zeros(10, dtype=bool))
+
+    # Test 1. Some Trues
+    expected_length[1] = 4
+    actual_length[1] = qc.max_span(np.array([0, 1, 0, 1, 1], dtype=bool))
+
+    # Test 2.  One Trues
+    expected_length[2] = 1
+    actual_length[2] = qc.max_span(np.array([1, 0, 0, 0, 0], dtype=bool))
+
+    # Run comparison
+    for i in range(len(actual_length)):
+        assert expected_length[i] == actual_length[i]
+
 
 if __name__ == "__main__":
     # os.system('python -m pytest -v AllTest.py') # This will replace line below if no vertiaul environment
@@ -166,6 +233,8 @@ if __name__ == "__main__":
     # test_corr2d()
     # test_get_overlap_images()
     # test_imgradient()
+    # test_imreconstruct()
+    # test_maxspan()
 
 
 # How to run, e.g. in terminal in PyCharm:

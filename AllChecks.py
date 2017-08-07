@@ -436,7 +436,10 @@ def image_roi_features(image_vector):
 
 def max_span(a):
     """ Return the lenght/span of true elements in input. """
-    return np.argwhere(a)[-1][0] - np.argwhere(a)[0][0]
+    true_idx = np.argwhere(a)
+    if np.size(true_idx) == 0:
+        return 0
+    return true_idx[-1][0] - true_idx[0][0] + 1
 
 
 def check_double_peak(image_vector):
