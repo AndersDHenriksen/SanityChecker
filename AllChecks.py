@@ -164,7 +164,7 @@ def find_mesc_chamber(opening, debug=False):
         cv2.dilate(contrast_mask.astype('uint8'), kernel_r7), np.logical_not(inner_mask), radial_mask)))
 
     if setting['UseThinning']:
-        contrast_mask = morphology.thin(contrast_mask)
+        contrast_mask = morphology.thin(contrast_mask, 1000)
 
     # Find circle. Alternatives: skimage.measure.CircleModel & skimage.measure.ransac
     hough_radii = np.arange(145, 151)
@@ -212,7 +212,7 @@ def find_bc_chamber(opening, debug=False):
         kernel_r3 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
         edge_mask = cv2.morphologyEx(edge_mask.astype('uint8'), cv2.MORPH_CLOSE, kernel_r3)
     if setting['UseThinning']:
-        edge_mask = morphology.thin(edge_mask)
+        edge_mask = morphology.thin(edge_mask, 1000)
 
     # The following procedure will try to find two cirles, from the bottom/top part of the edge_mask respectively.
     # As the BC chamber is not round on the images, the BC chamber will be the ellipse like overlap of the two circles.
