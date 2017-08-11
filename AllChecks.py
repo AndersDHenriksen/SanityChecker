@@ -2,6 +2,7 @@ import numpy as np
 from skimage import morphology, measure, draw, segmentation, transform
 import astropy.convolution
 import argparse
+import os
 # packages below this line are not crucial
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
@@ -268,6 +269,44 @@ def find_bc_chamber(opening, debug=False):
         ax.add_patch(ellipse)
 
     return Chamber(opening, i_mean, j_mean, i_r, j_r)
+
+
+def find_chambers(image_path, blood_also=False):
+    """ Find chambers in camera image
+
+    Chambers are identified using rough idea of their location and using cross-correlation to a reference image.
+
+    :param image_path: String with path and name of image.
+    :param blood_also: Bool, if blood openings should be found.
+    :return: List of either 2 or 4 chamber objects; String with possible errors.
+    """
+
+    # Define settings and output
+    setting = {'PositionExpected': (1380, 2500), 'CutSide': 500, 'BcOffsetToRefImg': (-34, -610), 'BcRi': 146,
+               'BcRj': 160, 'MescOffsetToRefImg': (2, 24), 'MescR': 142}
+    chambers = [None]*(2 + 2*blood_also)
+
+    # Load images and reference image
+    image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2GRAY)
+    script_path = os.path.dirname(os.path.abspath(__file__))
+    image_mesc_chamber = cv2.cvtColor(cv2.imread(script_path + '\\Data\\labelfree_mesc_chamber.png'), cv2.COLOR_BGR2GRAY)
+    mask_mesc_chamber = imgradient(image_mesc_chamber) > 60
+
+    cut_out = image[setting['PositionExpected'][0] - setting['CutSide']:setting['PositionExpected'][0] + setting['CutSide'],
+                        setting['PositionExpected'][1] - setting['CutSide']:setting['PositionExpected'][1] + setting['CutSide']]
+
+    xcor_mesc = astropy.convolution.convolve_fft(imgradient(cut_out) > 60, mask_mesc_chamber, boundary='wrap')
+    i_max, j_max = np.unravel_index(xcor_mesc.argmax(), xcor_mesc.shape)
+
+    idx_ref = np.array(setting['PositionExpected']) + np.array([i_max, j_max]) - (np.array(np.shape(xcor_mesc)) + 1)/2
+
+    cor_bc = idx_ref + np.array(setting['BcOffsetToRefImg'])
+    chambers[0] = Chamber('BC', image,  cor_bc[0], cor_bc[1], setting['BcRi'], setting['BcRj'])
+
+    cor_mesc = idx_ref + np.array(setting['MescOffsetToRefImg'])
+    chambers[1] = Chamber('MESC', image, cor_mesc[0], cor_mesc[1], setting['MescR'], setting['MescR'])
+
+    return chambers
 
 
 def imreconstruct(marker, mask):
@@ -976,16 +1015,14 @@ class Chamber:
     Y = np.zeros((0, 0), np.uint8)
     R = np.zeros((0, 0), np.uint8)
 
-    def __init__(self, opening, i_mean_opn, j_mean_opn, i_r, j_r):
-        self.Name = opening.Name
-        self.OpnI = np.round(i_mean_opn + np.arange(-i_r, i_r + 1)).astype('int')
-        self.OpnI = self.OpnI[np.logical_and(self.OpnI > -1, self.OpnI < np.size(opening.Img, 1))]
-        self.OpnJ = np.round(j_mean_opn + np.arange(-j_r, j_r + 1)).astype('int')
-        self.OpnJ = self.OpnJ[np.logical_and(self.OpnJ > -1, self.OpnJ < np.size(opening.Img, 1))]
-        self.Img = opening.Img[self.OpnI[0]:self.OpnI[-1] + 1, self.OpnJ[0]:self.OpnJ[-1] + 1]
-        if np.size(opening.cImg) > 0:
-            self.cImg = opening.cImg[self.OpnI[0]:self.OpnI[-1] + 1, self.OpnJ[0]:self.OpnJ[-1] + 1]
-        self.X, self.Y = np.meshgrid(np.linspace(-1, 1, np.size(self.OpnJ)), np.linspace(1, -1, np.size(self.OpnI)))
+    def __init__(self, name, image, i_mean, j_mean, i_r, j_r):
+        self.Name = name
+        self.I = np.round(i_mean + np.arange(-i_r, i_r + 1)).astype('int')
+        self.I = self.I[np.logical_and(self.I > -1, self.I < np.size(image, 1))]
+        self.J = np.round(j_mean + np.arange(-j_r, j_r + 1)).astype('int')
+        self.J = self.J[np.logical_and(self.J > -1, self.J < np.size(image, 1))]
+        self.Img = image[self.I[0]:self.I[-1] + 1, self.J[0]:self.J[-1] + 1]
+        self.X, self.Y = np.meshgrid(np.linspace(-1, 1, np.size(self.J)), np.linspace(1, -1, np.size(self.I)))
         self.R = np.sqrt(self.X ** 2 + self.Y ** 2)
 
 
