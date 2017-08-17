@@ -278,28 +278,29 @@ def find_chambers(image_path, blood_also=False, debug=False):
 
     :param image_path: String with path and name of image.
     :param blood_also: Bool, if blood openings should be found.
-    :return: List of either 2 or 4 chamber objects; String with possible errors.
+    :return: tuple with List of 2 chamber objects and bool if blood was detected.
     """
 
     # Define settings and output
     setting = {'PositionExpected': (1380, 2500), 'CutSide': 500, 'BcOffsetToRefImg': (-34, -610), 'BcRi': 146,
                'BcRj': 160, 'MescOffsetToRefImg': (2, 24), 'MescR': 142, 'BloodRatio': (0.25, 0.5)}
     poly_bss = np.array(
-        [(1968, 2251), (2282, 2194), (2408, 2233), (2426, 2308), (1866, 2418), (1857, 2359), (1968, 2251)], dtype='int')
-    poly_ofc2 = np.array([(2480, 560), (2109, 524), (2381, 374), (2480, 560)], dtype='int') # TODO is np.int32 required
+        [(2251, 1968), (2194, 2282), (2233, 2408), (2308, 2426), (2418, 1866), (2359, 1857), (2251, 1968)], dtype='int')
+    poly_ofc2 = np.array([(560, 2480), (524, 2109), (374, 2381), (560, 2480)], dtype='int')
     chambers = [None]*2
     blood_present = [None] * 2
 
     # Load images and reference image
     image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2GRAY)
     script_path = os.path.dirname(os.path.abspath(__file__))
-    image_mesc_chamber = cv2.cvtColor(cv2.imread(script_path + '\\Data\\labelfree_mesc_chamber.png'), cv2.COLOR_BGR2GRAY)
+    image_mesc_chamber = cv2.cvtColor(cv2.imread(os.path.join(script_path, 'Data', 'labelfree_mesc_chamber.png')),
+                                      cv2.COLOR_BGR2GRAY)
     mask_mesc_chamber = imgradient(image_mesc_chamber) > 60
 
     cut_out = image[setting['PositionExpected'][0] - setting['CutSide']:setting['PositionExpected'][0] + setting['CutSide'],
-                        setting['PositionExpected'][1] - setting['CutSide']:setting['PositionExpected'][1] + setting['CutSide']]
+                    setting['PositionExpected'][1] - setting['CutSide']:setting['PositionExpected'][1] + setting['CutSide']]
 
-    xcor_mesc = astropy.convolution.convolve_fft(imgradient(cut_out) > 60, mask_mesc_chamber, boundary='wrap')
+    xcor_mesc = astropy.convolution.convolve_fft(imgradient(cut_out) > 60, mask_mesc_chamber[::-1, ::-1], 'wrap')
     i_max, j_max = np.unravel_index(xcor_mesc.argmax(), xcor_mesc.shape)
     d_xcor = np.array([i_max, j_max]) - (np.array(np.shape(xcor_mesc)) + 1)/2
     idx_ref = np.array(setting['PositionExpected']) + d_xcor
@@ -316,7 +317,7 @@ def find_chambers(image_path, blood_also=False, debug=False):
         # Loop through the two polygon defining where to look for blood, and calc. intensity-ratio to image.
         for i, poly in enumerate([poly_bss, poly_ofc2]):
             mask = np.zeros(image.shape, dtype='uint8')
-            poly += d_xcor #TODO does this change poly_bss? if not, change in plotting
+            poly += d_xcor[::-1]
             cv2.fillConvexPoly(mask, poly, True)
             blood_present[i] = np.mean(image[mask.astype('bool')]) / image_mean < setting['BloodRatio'][i]
 
@@ -331,7 +332,7 @@ def find_chambers(image_path, blood_also=False, debug=False):
                           fc='None', lw=2)
         poly0 = plt.Polygon(poly_bss, ec='b', fc='none')
         poly1 = plt.Polygon(poly_ofc2, ec='y', fc='none')
-        ax.add_patch([ellipse0, ellipse1, poly0, poly1])
+        [ax.add_patch(p) for p in [ellipse0, ellipse1, poly0, poly1]]
 
     return chambers, np.all(blood_present)
 
@@ -984,10 +985,9 @@ def sanity_checker(image_paths, blood_test=False):
     # Image 2
     image_idx = 2
     chambers, _ = find_chambers(image_paths[image_idx])
+    result['MescSpot'] = detect_spot_mesc(chambers[1], dry_mesc_chamber)
     if result['MescProblem'] == 0:
         result['MescProblem'] = detect_badfill_mesc(chambers[1], reference_chambers[1])
-    if result['MescProblem'] == 0:
-        result['MescSpot'] = detect_spot_mesc(chambers[1], dry_mesc_chamber)
 
     return result
 
@@ -1043,7 +1043,7 @@ if __name__ == "__main__":
 
     # Load images
     if use_local_images:
-        image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/Image Library_PlasmaSerum/Correct procedure_1'
+        image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/ImageLibrary_Plasma/Images_Monday_14_08_2017/0'
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()
