@@ -271,7 +271,7 @@ def find_bc_chamber(opening, debug=False):
     return Chamber(opening, i_mean, j_mean, i_r, j_r)
 
 
-def find_chambers(image_path, blood_also=False):
+def find_chambers(image_path, blood_also=False, debug=False):
     """ Find chambers in camera image
 
     Chambers are identified using rough idea of their location and using cross-correlation to a reference image.
@@ -283,8 +283,12 @@ def find_chambers(image_path, blood_also=False):
 
     # Define settings and output
     setting = {'PositionExpected': (1380, 2500), 'CutSide': 500, 'BcOffsetToRefImg': (-34, -610), 'BcRi': 146,
-               'BcRj': 160, 'MescOffsetToRefImg': (2, 24), 'MescR': 142}
-    chambers = [None]*(2 + 2*blood_also)
+               'BcRj': 160, 'MescOffsetToRefImg': (2, 24), 'MescR': 142, 'BloodRatio': (0.25, 0.5)}
+    poly_bss = np.array(
+        [(1968, 2251), (2282, 2194), (2408, 2233), (2426, 2308), (1866, 2418), (1857, 2359), (1968, 2251)], dtype='int')
+    poly_ofc2 = np.array([(2480, 560), (2109, 524), (2381, 374), (2480, 560)], dtype='int') # TODO is np.int32 required
+    chambers = [None]*2
+    blood_present = [None] * 2
 
     # Load images and reference image
     image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2GRAY)
@@ -297,8 +301,8 @@ def find_chambers(image_path, blood_also=False):
 
     xcor_mesc = astropy.convolution.convolve_fft(imgradient(cut_out) > 60, mask_mesc_chamber, boundary='wrap')
     i_max, j_max = np.unravel_index(xcor_mesc.argmax(), xcor_mesc.shape)
-
-    idx_ref = np.array(setting['PositionExpected']) + np.array([i_max, j_max]) - (np.array(np.shape(xcor_mesc)) + 1)/2
+    d_xcor = np.array([i_max, j_max]) - (np.array(np.shape(xcor_mesc)) + 1)/2
+    idx_ref = np.array(setting['PositionExpected']) + d_xcor
 
     cor_bc = idx_ref + np.array(setting['BcOffsetToRefImg'])
     chambers[0] = Chamber('BC', image,  cor_bc[0], cor_bc[1], setting['BcRi'], setting['BcRj'])
@@ -306,7 +310,30 @@ def find_chambers(image_path, blood_also=False):
     cor_mesc = idx_ref + np.array(setting['MescOffsetToRefImg'])
     chambers[1] = Chamber('MESC', image, cor_mesc[0], cor_mesc[1], setting['MescR'], setting['MescR'])
 
-    return chambers
+    # Detect blood, by looking at intensity in ROI polys
+    if blood_also:
+        image_mean = np.mean(image)
+        # Loop through the two polygon defining where to look for blood, and calc. intensity-ratio to image.
+        for i, poly in enumerate([poly_bss, poly_ofc2]):
+            mask = np.zeros(image.shape, dtype='uint8')
+            poly += d_xcor #TODO does this change poly_bss? if not, change in plotting
+            cv2.fillConvexPoly(mask, poly, True)
+            blood_present[i] = np.mean(image[mask.astype('bool')]) / image_mean < setting['BloodRatio'][i]
+
+    # Show image output if true debug flag
+    if debug:
+        plt.figure()
+        plt.imshow(image)
+        ax = plt.gca()
+        ellipse0 = Ellipse(xy=(cor_bc[::-1]), width=2 * setting['BcRj'], height=2 * setting['BcRi'], edgecolor='r',
+                          fc='None', lw=2)
+        ellipse1 = Ellipse(xy=(cor_mesc[::-1]), width=2 * setting['MescR'], height=2 * setting['MescR'], edgecolor='g',
+                          fc='None', lw=2)
+        poly0 = plt.Polygon(poly_bss, ec='b', fc='none')
+        poly1 = plt.Polygon(poly_ofc2, ec='y', fc='none')
+        ax.add_patch([ellipse0, ellipse1, poly0, poly1])
+
+    return chambers, np.all(blood_present)
 
 
 def imreconstruct(marker, mask):
@@ -945,40 +972,22 @@ def sanity_checker(image_paths, blood_test=False):
 
     # Image 0
     image_idx = 0
-    openings, result['Error'] = find_openings(image_paths[image_idx], blood_test)
-    if not result['Error'] == '':
-        return result
-    reference_opening_shape = np.array(openings[1].Img.shape)
-    bc_chamber = find_bc_chamber(openings[0])
-    reference_mesc_chamber = find_mesc_chamber(openings[1])
-    result['BcSpot'] = detect_spot_bc(bc_chamber)
+    reference_chambers, _ = find_chambers(image_paths[image_idx])
 
     # Image 1
     image_idx = 1
-    openings, result['Error'] = find_openings(image_paths[image_idx], blood_test)
-    if not result['Error'] == '':
-        return result
-    if np.any(np.abs(openings[1].Img.shape - reference_opening_shape) > 20):
-        mesc_chamber = find_mesc_chamber(openings[1])
-    else:
-        mesc_chamber = find_same_chamber(openings[1], reference_mesc_chamber)
-    result['MescProblem'] = detect_badfill_mesc(mesc_chamber, reference_mesc_chamber)
-    if blood_test:
-        result['BloodPresent'] = detect_blood_ofc2(openings[2]) and detect_blood_bss(openings[3])
+    chambers, result['BloodPresent'] = find_chambers(image_paths[image_idx], blood_test)
+    result['BcSpot'] = detect_spot_mesc(chambers[0], reference_chambers[0]) # TODO replace this with real function
+    result['MescProblem'] = detect_badfill_mesc(chambers[1], reference_chambers[1])
+    dry_mesc_chamber = chambers[1]
 
     # Image 2
     image_idx = 2
-    openings, result['Error'] = find_openings(image_paths[image_idx], blood_test)
-    if not result['Error'] == '':
-        return result
-    if np.any(np.abs(openings[1].Img.shape - reference_opening_shape) > 20):
-        mesc_chamber = find_mesc_chamber(openings[1])
-    else:
-        mesc_chamber = find_same_chamber(openings[1], reference_mesc_chamber)
+    chambers, _ = find_chambers(image_paths[image_idx])
     if result['MescProblem'] == 0:
-        result['MescProblem'] = detect_badfill_mesc(mesc_chamber, reference_mesc_chamber)
+        result['MescProblem'] = detect_badfill_mesc(chambers[1], reference_chambers[1])
     if result['MescProblem'] == 0:
-        result['MescSpot'] = detect_spot_mesc(mesc_chamber, reference_mesc_chamber)
+        result['MescSpot'] = detect_spot_mesc(chambers[1], dry_mesc_chamber)
 
     return result
 
