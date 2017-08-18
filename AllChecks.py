@@ -835,8 +835,19 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     :return: int error code. 0 = no problems. 1 = premature transfer. 2 = bubble.
     """
 
-    setting = {'RCutOff': .95}
+    setting = {'RCutOff': 0.95, 'CompensateAverage': False, 'UseLinearCorrection': True, 'UseRadialCorrection': True,
+               'UseMedianFilter': True}
     conclusions = ['MESC stayed dry.', 'MESC overflow.', 'MESC bubble.']
+
+    # Compensate out intensity slopes
+    if setting['UseLinearCorrection']:
+        linear_correction(chamber)
+        linear_correction(reference_chamber)
+
+    # Compensate out radial intensities
+    if setting['UseRadialCorrection']:
+        radial_correction(chamber)
+        radial_correction(reference_chamber)
 
     # Calculate translation between images and overlaps
     chm_img, ref_img = get_overlap_images(chamber.Img, reference_chamber.Img)
@@ -847,10 +858,22 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     x, _ = get_overlap_images(x, ref_img, translation)
     chm_img, ref_img = get_overlap_images(chm_img, ref_img, translation)
 
+    # Perform filtering to reduce noise and level out mean offset
+    if setting['UseMedianFilter']:
+        chm_img = cv2.medianBlur(chm_img, 3)
+        ref_img = cv2.medianBlur(ref_img, 3)
+
+    if setting['CompensateAverage']:
+        mask = np.logical_and(r < .9, r > .5)
+        compensation = (np.mean(chm_img[mask]) - np.mean(ref_img[mask])).clip(min=-2)
+    else:
+        compensation = 0
+
     # Calculate difference between images, and row averages
-    diff_img = (chm_img.astype('int16') - ref_img).clip(min=0)
+    diff_img = (chm_img.astype('int16') - compensation - ref_img).clip(min=0)
     diff_img[r > setting['RCutOff']] = 0
     average_diff = np.sum(diff_img, axis=0) / (.1 + np.sum(r <= setting['RCutOff'], axis=0))
+
 
     # Overflow is high intensity line and not last pixels
     max_idx = np.argmax(average_diff)
