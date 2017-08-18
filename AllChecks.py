@@ -56,8 +56,7 @@ def find_openings(image_path, blood_also=False):
 
         # Make mask of middle of cutOut
         opening_mask = np.zeros(np.shape(cut_out), dtype=bool)
-        opening_mask[cut_side * 3 / 4: cut_side * 5 / 4,
-        cut_side * 3 / 4: cut_side * 5 / 4] = True
+        opening_mask[cut_side * 3 / 4: cut_side * 5 / 4, cut_side * 3 / 4: cut_side * 5 / 4] = True
 
         # Try increasing threshold until appropriate sized opening
         while increase_thres:
@@ -277,7 +276,8 @@ def find_chambers(image_path, blood_also=False, debug=False):
     Chambers are identified using rough idea of their location and using cross-correlation to a reference image.
 
     :param image_path: String with path and name of image.
-    :param blood_also: Bool, if blood openings should be found.
+    :param blood_also: Bool, if blood should be looked for in BSS and OFC2.
+    :param debug: Bool, if plot with chambers should be produced
     :return: tuple with List of 2 chamber objects and bool if blood was detected.
     """
 
@@ -327,9 +327,9 @@ def find_chambers(image_path, blood_also=False, debug=False):
         plt.imshow(image)
         ax = plt.gca()
         ellipse0 = Ellipse(xy=(cor_bc[::-1]), width=2 * setting['BcRj'], height=2 * setting['BcRi'], edgecolor='r',
-                          fc='None', lw=2)
+                           fc='None', lw=2)
         ellipse1 = Ellipse(xy=(cor_mesc[::-1]), width=2 * setting['MescR'], height=2 * setting['MescR'], edgecolor='g',
-                          fc='None', lw=2)
+                           fc='None', lw=2)
         poly0 = plt.Polygon(poly_bss, ec='b', fc='none')
         poly1 = plt.Polygon(poly_ofc2, ec='y', fc='none')
         [ax.add_patch(p) for p in [ellipse0, ellipse1, poly0, poly1]]
@@ -411,7 +411,7 @@ def half_hough_detection(mask, good_range):
     return set_cir, circle
 
 
-def detect_spot_bc(chamber, debug=False):
+def detect_spot_bc_old(chamber, debug=False):
     """ Detect reagent spot in BS chamber.
 
     Extract intensity histogram for the part of the BC chamber in the shadow of the label.
@@ -708,6 +708,64 @@ def get_area_of_connected_components(mask):
     return map(lambda c: cv2.contourArea(c), contours)
 
 
+def detect_spot_bc(chamber, reference_chamber, debug=False):
+    """ Detect reagent spot in BC chamber.
+
+    Look for a reagent spot using the intensity difference between the initial chamber
+    and the plasma filled chamber.
+
+    :param chamber: BC chamber where spot should have disappeared.
+    :param reference_chamber: BC chamber to detect spot in.
+    :param debug: Bool, if True visual plot to understand algorithm steps.
+    :return: Bool, if True reagent spot was detected.
+    """
+
+    setting = {'CompensateAverage': True, 'RatioThres': 0.45, 'UseMedianFilter': True}
+    conclusions = ['Spot NOT detected in BC chamber.', 'Spot detected in BC chamber.']
+
+    # Align chamber images and radius image
+    chm_img, ref_img = get_overlap_images(chamber.Img, reference_chamber.Img)
+    translation = corr2d(chm_img, ref_img)
+    r, _ = get_overlap_images(chamber.R, reference_chamber.R)
+    r, _ = get_overlap_images(r, ref_img, translation)
+    chm_img, ref_img = get_overlap_images(chm_img, ref_img, translation)
+
+    half_point = int(chm_img.shape[0]/2)
+    chm_img = chm_img[:half_point, :]
+    ref_img = ref_img[:half_point, :]
+    r = r[:half_point, :]
+
+    # Perform filtering to reduce noise and level out mean offset
+    if setting['UseMedianFilter']:
+        chm_img = cv2.medianBlur(chm_img, 3)
+        ref_img = cv2.medianBlur(ref_img, 3)
+
+    if setting['CompensateAverage']:
+        mask = np.logical_and(r < .9, r > .5)
+        compensation = (np.mean(chm_img[mask]) - np.mean(ref_img[mask])).clip(min=-2)
+    else:
+        compensation = 0
+
+    # Get difference between chambers and detect beads
+    diff_img = (ref_img.astype('int16')+compensation - chm_img).clip(min=0)
+    ratio = np.mean(diff_img[r < .75] > 4)
+    has_spot = ratio > setting['RatioThres']
+
+    if debug:
+        plt.figure()
+        plt.subplot(2, 2, 1)
+        plt.imshow(diff_img)
+        plt.title(conclusions[has_spot])
+        plt.subplot(2, 2, 2)
+        plt.imshow(np.logical_and(diff_img > 4, r < .75))
+        plt.title('Ratio: %.2f' % ratio)
+        plt.subplot(2, 2, 3)
+        plt.imshow(ref_img)
+        plt.subplot(2, 2, 4)
+        plt.imshow(chm_img)
+    return has_spot
+
+
 def detect_spot_mesc(chamber, reference_chamber, debug=False):
     """ Detect beads spot in MESC chamber.
 
@@ -768,7 +826,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
         j, i = np.meshgrid(np.arange(1, np.size(mask, 1) + 1), np.arange(1, np.size(mask, 0) + 1))
         center_mask = np.logical_and((i - np.mean(i[mask]))**2 + (j - np.mean(j[mask]))**2 < 70**2, r < .75)
         new_ratio = np.sum(mask[center_mask]).astype('f') / np.sum(center_mask)
-        has_beads = new_ratio > 2*setting['RatioThres']
+        has_beads = new_ratio > 2*setting['RatioThres'] and np.mean(j[mask])/mask.shape[1] < .7
 
     if debug:
         plt.figure()
@@ -777,6 +835,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
         plt.title(conclusions[has_beads])
         plt.subplot(2, 2, 2)
         plt.imshow(np.logical_and(diff_img > 4, r < .75))
+        plt.title('Ratio: %.2f' % ratio)
         plt.subplot(2, 2, 3)
         plt.imshow(ref_img)
         plt.subplot(2, 2, 4)
@@ -835,7 +894,7 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     :return: int error code. 0 = no problems. 1 = premature transfer. 2 = bubble.
     """
 
-    setting = {'RCutOff': 0.95, 'CompensateAverage': False, 'UseLinearCorrection': True, 'UseRadialCorrection': True,
+    setting = {'RCutOff': 0.95, 'CompensateAverage': True, 'UseLinearCorrection': True, 'UseRadialCorrection': True,
                'UseMedianFilter': True}
     conclusions = ['MESC stayed dry.', 'MESC overflow.', 'MESC bubble.']
 
@@ -873,7 +932,6 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     diff_img = (chm_img.astype('int16') - compensation - ref_img).clip(min=0)
     diff_img[r > setting['RCutOff']] = 0
     average_diff = np.sum(diff_img, axis=0) / (.1 + np.sum(r <= setting['RCutOff'], axis=0))
-
 
     # Overflow is high intensity line and not last pixels
     max_idx = np.argmax(average_diff)
@@ -1001,7 +1059,7 @@ def sanity_checker(image_paths, blood_test=False):
     # Image 1
     image_idx = 1
     chambers, result['BloodPresent'] = find_chambers(image_paths[image_idx], blood_test)
-    result['BcSpot'] = detect_spot_mesc(chambers[0], reference_chambers[0]) # TODO replace this with real function
+    result['BcSpot'] = detect_spot_bc(chambers[0], reference_chambers[0])
     result['MescProblem'] = detect_badfill_mesc(chambers[1], reference_chambers[1])
     dry_mesc_chamber = chambers[1]
 

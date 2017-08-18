@@ -2,7 +2,7 @@ import AllChecks as qc
 import numpy as np
 from skimage import measure, data
 import os
-import matplotlib.pyplot as plt # To help making debugging easier
+import matplotlib.pyplot as plt  # To help making debugging easier
 
 
 def test_bwareafilt():
@@ -225,8 +225,8 @@ def test_maxspan():
 
 
 if __name__ == "__main__":
-    # os.system('python -m pytest -v AllTest.py') # This will replace line below if no vertiaul environment
-    os.system('/home/anders/anaconda3/envs/cv/bin/python -m pytest -v AllTest.py')
+    # os.system('python -m pytest -v QcUnitTest.py') # This will replace line below if no vertiaul environment
+    os.system('/home/anders/anaconda3/envs/cv/bin/python -m pytest -v QcUnitTest.py')
 
     # To run individual tests, comment lines above and uncomment lines below here
     # test_bwareafilt()
@@ -239,4 +239,4 @@ if __name__ == "__main__":
 
 # How to run, e.g. in terminal in PyCharm:
 # $ source activate cv
-# $ pytest AllTest.py
+# $ pytest QcUnitTest.py
