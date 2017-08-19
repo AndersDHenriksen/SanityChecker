@@ -225,7 +225,7 @@ def test_maxspan():
 
 
 if __name__ == "__main__":
-    # os.system('python -m pytest -v QcUnitTest.py') # This will replace line below if no vertiaul environment
+    # os.system('python -m pytest -v QcUnitTest.py') # This will replace line below if no virtual environment
     os.system('/home/anders/anaconda3/envs/cv/bin/python -m pytest -v QcUnitTest.py')
 
     # To run individual tests, comment lines above and uncomment lines below here
