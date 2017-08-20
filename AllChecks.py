@@ -18,16 +18,17 @@ def find_chambers(image_path, blood_also=False, debug=False):
     :param image_path: String with path and name of image.
     :param blood_also: Bool, if blood should be looked for in BSS and OFC2.
     :param debug: Bool, if plot with chambers should be produced
-    :return: tuple with List of 2 chamber objects and bool if blood was detected.
+    :return: 3-item tuple with List of 2 chamber objects, possible error string, bool if blood was detected.
     """
 
     # Define settings and output
     setting = {'PositionExpected': (1380, 2500), 'CutSide': 500, 'BcOffsetToRefImg': (-34, -610), 'BcRi': 146,
-               'BcRj': 160, 'MescOffsetToRefImg': (2, 24), 'MescR': 142, 'BloodRatio': (0.25, 0.5)}
+               'BcRj': 160, 'MescOffsetToRefImg': (2, 24), 'MescR': 142, 'BloodRatio': (0.25, 0.5), 'xCorMin': 0.1}
     poly_bss = np.array(
         [(2251, 1968), (2194, 2282), (2233, 2408), (2308, 2426), (2418, 1866), (2359, 1857), (2251, 1968)], dtype='int')
     poly_ofc2 = np.array([(560, 2480), (524, 2109), (374, 2381), (560, 2480)], dtype='int')
     chambers = [None]*2
+    error = ''
     blood_present = [None] * 2
 
     # Load images and reference image
@@ -41,6 +42,9 @@ def find_chambers(image_path, blood_also=False, debug=False):
                     setting['PositionExpected'][1] - setting['CutSide']:setting['PositionExpected'][1] + setting['CutSide']]
 
     xcor_mesc = astropy.convolution.convolve_fft(imgradient(cut_out) > 60, mask_mesc_chamber[::-1, ::-1], 'wrap')
+    if np.max(xcor_mesc) < setting['xCorMin']:
+        error = 'Chambers could not be detected for:' + image_path
+        return chambers, error, blood_present
     i_max, j_max = np.unravel_index(xcor_mesc.argmax(), xcor_mesc.shape)
     d_xcor = np.array([i_max, j_max]) - (np.array(np.shape(xcor_mesc)) + 1)/2
     idx_ref = np.array(setting['PositionExpected']) + d_xcor
@@ -74,7 +78,7 @@ def find_chambers(image_path, blood_also=False, debug=False):
         poly1 = plt.Polygon(poly_ofc2, ec='y', fc='none')
         [ax.add_patch(p) for p in [ellipse0, ellipse1, poly0, poly1]]
 
-    return chambers, np.all(blood_present)
+    return chambers, error, np.all(blood_present)
 
 
 def imreconstruct(marker, mask):
@@ -459,18 +463,24 @@ def sanity_checker(image_paths, blood_test=False):
 
     # Image 0
     image_idx = 0
-    reference_chambers, _ = find_chambers(image_paths[image_idx])
+    reference_chambers, result['Error'], _ = find_chambers(image_paths[image_idx])
+    if result['Error'] != '':
+        return result
 
     # Image 1
     image_idx = 1
-    chambers, result['BloodPresent'] = find_chambers(image_paths[image_idx], blood_test)
+    chambers, result['Error'], result['BloodPresent'] = find_chambers(image_paths[image_idx], blood_test)
+    if result['Error'] != '':
+        return result
     result['BcSpot'] = detect_spot_bc(chambers[0], reference_chambers[0])
     result['MescProblem'] = detect_badfill_mesc(chambers[1], reference_chambers[1])
     dry_mesc_chamber = chambers[1]
 
     # Image 2
     image_idx = 2
-    chambers, _ = find_chambers(image_paths[image_idx])
+    chambers, result['Error'], _ = find_chambers(image_paths[image_idx])
+    if result['Error'] != '':
+        return result
     result['MescSpot'] = detect_spot_mesc(chambers[1], dry_mesc_chamber)
     if result['MescProblem'] == 0:
         result['MescProblem'] = detect_badfill_mesc(chambers[1], reference_chambers[1])
