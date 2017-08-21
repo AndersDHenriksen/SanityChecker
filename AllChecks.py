@@ -294,7 +294,7 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     """ Detect MESC problem, either bubble or overflow.
 
     The image data from chamber and reference chamber is aligned and subtracted to make a diff image.
-    In this diff image veritcal lines of high intensity (overflow)
+    In this diff image vertical lines of high intensity (overflow)
     and bubbles whose edge are intensity than the background are both detected.
 
     :param chamber: MESC chamber object from image 2 or 3.
@@ -346,7 +346,7 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     max_idx = np.argmax(average_diff)
     mesc_overflow = average_diff[max_idx] > 30 and np.sum(average_diff[max_idx:] > 0) > 4
 
-    # Look for mesc bubble at certain position and size
+    # Look for mesc bubble at certain region and size
     if not mesc_overflow and np.mean(diff_img[r < .9]) < 9:
         bubble_thres = min(15, 2 * np.mean(diff_img) + 5)
         bubble_mask = np.logical_and.reduce((diff_img < bubble_thres, r < .9, x < .25))
