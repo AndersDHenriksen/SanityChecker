@@ -493,10 +493,9 @@ class Chamber:
     Chamber object to hold location and imagedata for the different chambers.
     """
     Name = ''
-    OpnI = np.zeros(0)
-    OpnJ = np.zeros(0)
+    I = np.zeros(0)
+    J = np.zeros(0)
     Img = np.zeros((0, 0), np.uint8)
-    cImg = np.zeros((0, 0, 3), np.uint8)
     X = np.zeros((0, 0), np.uint8)
     Y = np.zeros((0, 0), np.uint8)
     R = np.zeros((0, 0), np.uint8)
