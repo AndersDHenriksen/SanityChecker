@@ -34,14 +34,19 @@ def find_chambers(image_path, blood_also=False, debug=False):
     # Load images and reference image
     image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2GRAY)
     script_path = os.path.dirname(os.path.abspath(__file__))
-    image_mesc_chamber = cv2.cvtColor(cv2.imread(os.path.join(script_path, 'Data', 'labelfree_mesc_chamber.png')),
-                                      cv2.COLOR_BGR2GRAY)
-    mask_mesc_chamber = imgradient(image_mesc_chamber) > 60
+
+    # The image "grad_mask_mesc_chamber_reversed" is constructed using:
+    # image_mesc_chamber = cv2.cvtColor(cv2.imread(os.path.join(script_path, 'Data', 'labelfree_mesc_chamber.png')),
+    #                                   cv2.COLOR_BGR2GRAY)
+    # mask_mesc_chamber = imgradient(image_mesc_chamber) > 60
+
+    grad_mask_mesc_chamber_reversed = cv2.imread(
+        os.path.join(script_path, 'Data', 'grad_mask_mesc_chamber_reversed.png'), cv2.COLOR_BGR2GRAY).astype('bool')
 
     cut_out = image[setting['PositionExpected'][0] - setting['CutSide']:setting['PositionExpected'][0] + setting['CutSide'],
                     setting['PositionExpected'][1] - setting['CutSide']:setting['PositionExpected'][1] + setting['CutSide']]
 
-    xcor_mesc = astropy.convolution.convolve_fft(imgradient(cut_out) > 60, mask_mesc_chamber[::-1, ::-1], 'wrap')
+    xcor_mesc = astropy.convolution.convolve_fft(imgradient(cut_out) > 60, grad_mask_mesc_chamber_reversed, 'wrap')
     if np.max(xcor_mesc) < setting['xCorMin']:
         error = 'Chambers could not be detected for:' + image_path
         return chambers, error, blood_present

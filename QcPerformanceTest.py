@@ -2,7 +2,7 @@ import AllChecks as qc
 import numpy as np
 import pandas as pd
 import os
-
+import time
 
 def load_expected_result_table():
     """
@@ -41,6 +41,7 @@ if __name__ == "__main__":
     compare_result = pd.DataFrame(np.nan, index=range(len(image_path)), columns=expected_result.columns)
 
     # Run test and compare actual result to expectation
+    start_time = time.time()
     for i in range(len(image_path)):
         image_files = [os.path.join(image_path[i], f) for f in os.listdir(image_path[i])]
         blood_test = not np.isnan(expected_result['BloodPresent'][i])
@@ -50,6 +51,9 @@ if __name__ == "__main__":
         for c in actual_result.keys():
             compare_result[c][i] = expected_result[c][i] == actual_result[c]
         print 'Calculating on folder: ' + str(i + 1) + '/' + str(len(image_path)) + '...'
+    elapsed_time = time.time() - start_time
+    print 'Calculation done after {:.0f} sec. Average = {:3.1f} sec.\n'.format(elapsed_time,
+                                                                               elapsed_time / len(image_path))
 
     # Copy MescPremature and MescBubble result from MescProblem, as this is logged under the same entry.
     compare_result['MescBubble'] = compare_result['MescProblem']
