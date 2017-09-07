@@ -134,7 +134,7 @@ def detect_spot_bc(chamber, reference_chamber, debug=False):
     :return: Bool, if True reagent spot was detected.
     """
 
-    setting = {'CompensateAverage': True, 'RatioThres': 0.45, 'UseMedianFilter': True}
+    setting = {'CompensateAverage': True, 'RatioThres': 0.25, 'UseMedianFilter': True}
     conclusions = ['Spot NOT detected in BC chamber.', 'Spot detected in BC chamber.']
 
     # Align chamber images and radius image
@@ -161,7 +161,7 @@ def detect_spot_bc(chamber, reference_chamber, debug=False):
         compensation = 0
 
     # Get difference between chambers and detect beads
-    diff_img = (ref_img.astype('int16')+compensation - chm_img).clip(min=0)
+    diff_img = (ref_img.astype('int16') + compensation - chm_img).clip(min=0)
     ratio = np.mean(diff_img[r < .75] > 4)
     has_spot = ratio > setting['RatioThres']
 
@@ -192,8 +192,8 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
     :return: Bool, if True beads spot was detected.
     """
 
-    setting = {'CompensateAverage': True, 'RatioThres': 0.14, 'UseLinearCorrection': True, 'UseRadialCorrection': True,
-               'UseMedianFilter': True}
+    setting = {'CompensateAverage': True, 'RatioThres': 0.14, 'jThres': 0.67, 'UseLinearCorrection': True,
+               'UseRadialCorrection': True, 'UseMedianFilter': True}
     conclusions = ['Beads NOT detected in MESC chamber.', 'Beads detected in MESC chamber.']
 
     # First try simple detection
@@ -225,22 +225,25 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
 
     if setting['CompensateAverage']:
         mask = np.logical_and(r < .9, r > .5)
-        compensation = (np.mean(chm_img[mask]) - np.mean(ref_img[mask])).clip(min=-2)
+        compensation = (np.mean(chm_img[mask]) - np.mean(ref_img[mask]))
     else:
         compensation = 0
 
     # Get difference between chambers and detect beads
     diff_img = (ref_img.astype('int16')+compensation - chm_img).clip(min=0)
-    ratio = np.mean(diff_img[r < .75] > 4)
+    mask = np.logical_and(diff_img > 4, r < .75)
+    ratio = np.mean(mask[r < .75])
     has_beads = ratio > setting['RatioThres']
 
     # Also try to find centroid of largest object. Go to centroid calc ratio in vicinity
     if not has_beads and ratio > .1:
-        mask = np.logical_and(diff_img > 4, r < .75)
         j, i = np.meshgrid(np.arange(1, np.size(mask, 1) + 1), np.arange(1, np.size(mask, 0) + 1))
         center_mask = np.logical_and((i - np.mean(i[mask]))**2 + (j - np.mean(j[mask]))**2 < 70**2, r < .75)
         new_ratio = np.sum(mask[center_mask]).astype('f') / np.sum(center_mask)
-        has_beads = new_ratio > 2*setting['RatioThres'] and np.mean(j[mask])/mask.shape[1] < .7
+        has_beads = new_ratio > 2*setting['RatioThres']
+
+    j_avg = np.sum(np.sum(mask, axis=0)*np.arange(mask.shape[1])).astype('f')/(np.sum(mask)*mask.shape[1])
+    has_beads = has_beads and j_avg < setting['jThres']
 
     if debug:
         plt.figure()
@@ -550,7 +553,7 @@ if __name__ == "__main__":
 
     # Convert result dict. to unique integer. 0 = no problems
     out_bin = [not result['BcSpot'], not result['MescSpot'], result['MescProblem'] > 0,
-               result['BloodPresent'] != blood_test]
+               blood_test and not result['BloodPresent']]
     out_int = sum([b*2**i for i, b in enumerate(out_bin)])
     print out_int
 

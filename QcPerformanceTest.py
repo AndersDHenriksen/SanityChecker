@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import time
 
+
 def load_expected_result_table():
     """
     Use excel table with manual annotation of images to construct expected result and image paths folder list.
@@ -11,26 +12,38 @@ def load_expected_result_table():
     :return: Tuple with pandas data frame with expected/correct result and list of image folders
     """
 
-    # Load truth table
-    # data_path = r'C:\Users\310229518\Google Drive\BluSense'
-    data_path = '/media/anders/-Anders-3-/Google Drev/BluSense'
-    truth_table = pd.read_excel(os.path.join(data_path, 'ImageLibrary_Plasma', 'ImageLibrary_Plasma_TruthTable.xlsx'))
-    truth_table.drop(np.argwhere(truth_table['Blacklist'] > 0), inplace=True)
+    # Define main paths, categories and their results
+    main_path = '/media/anders/-Anders-3-/Google Drev/BluSense/ImageLibrary_Plasma'
+    category_folders = ['Good', 'No_Beads', 'No_Reagents', 'No_Sample', 'Not_Filled', 'Premature_Partial',
+                        'Premature_Full']
+    category_results = {'Good': {'BcSpot': True, 'MescSpot': True, 'BloodPresent': np.NaN, 'MescProblem': False,
+                                 'Error': ''},
+                        'No_Beads': {'BcSpot': True, 'MescSpot': False, 'BloodPresent': np.NaN, 'MescProblem': False,
+                                     'Error': ''},
+                        'No_Reagents': {'BcSpot': False, 'MescSpot': True, 'BloodPresent': np.NaN, 'MescProblem': False,
+                                        'Error': ''},
+                        'No_Sample': {'BcSpot': False, 'MescSpot': False, 'BloodPresent': np.NaN, 'MescProblem': False,
+                                      'Error': ''},
+                        'Not_Filled': {'BcSpot': True, 'MescSpot': True, 'BloodPresent': np.NaN, 'MescProblem': True,
+                                       'Error': ''},
+                        'Premature_Full': {'BcSpot': True, 'MescSpot': False, 'BloodPresent': np.NaN,
+                                           'MescProblem': False, 'Error': ''},
+                        'Premature_Partial': {'BcSpot': True, 'MescSpot': True, 'BloodPresent': np.NaN,
+                                              'MescProblem': True, 'Error': ''}
+                        }
 
-    # Create list of paths
-    image_path = [os.path.join(data_path, truth_table['MainPath'][i], str(truth_table['Folder'][i])).replace('\\',
-                  os.sep) for i in range(truth_table.shape[0])]
-
-    # Create expected result. Note this must have same columns as qc.sanity_checker output keys
-    expected_result = pd.DataFrame()
-    expected_result[['BcSpot', 'MescSpot', 'BloodPresent']] = truth_table[['BcSpot', 'MescSpot', 'Blood']]
-    expected_result.loc[truth_table['Leaking'] > 0, ['BcSpot', 'MescSpot']] = 0
-    expected_result['MescProblem'] = np.logical_or(truth_table['Mesc Premature'], truth_table['Mesc Bubble'])
-    expected_result['MescPremature'] = truth_table['Mesc Premature']
-    expected_result['MescBubble'] = truth_table['Mesc Bubble']
-    expected_result['Error'] = ''
+    # Construct expected_results and path constants
+    image_path = []
+    expected_result = pd.DataFrame(columns=category_results['Good'].keys())
+    for cf in category_folders:
+        data_path = os.path.join(main_path, cf)
+        cf_image_paths = [os.path.join(data_path, f) for f in os.listdir(data_path)]
+        image_path = image_path + cf_image_paths
+        cf_expected_result = pd.DataFrame(category_results[cf], index=range(len(cf_image_paths)))
+        expected_result = expected_result.append(cf_expected_result, ignore_index=True)
 
     return expected_result, image_path
+
 
 if __name__ == "__main__":
 
@@ -56,13 +69,15 @@ if __name__ == "__main__":
                                                                                elapsed_time / len(image_path))
 
     # Copy MescPremature and MescBubble result from MescProblem, as this is logged under the same entry.
-    compare_result['MescBubble'] = compare_result['MescProblem']
-    compare_result['MescPremature'] = compare_result['MescProblem']
+    for table in [expected_result, compare_result]:
+        table['MescBubble'] = table['MescProblem']
+        table['MescPremature'] = table['MescProblem']
 
     # Calculate and print false positive/negative error rates
     positive_error = {'BcSpot': False, 'MescSpot': False, 'BloodPresent': False, 'MescProblem': True,
                       'MescBubble': True, 'MescPremature': True}
-    for c in expected_result.columns[:-1]:
+
+    for c in positive_error.keys():
         positives = expected_result[c] == positive_error[c]
         negatives = expected_result[c] == (not positive_error[c])
         false_negative_rate = 1 - np.mean(compare_result[c][positives])
