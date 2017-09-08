@@ -12,7 +12,6 @@ expected_result, image_path = qct.load_expected_result_table()
 
 # Run test and compare actual result to expectation
 for i in range(0, len(image_path)):
-    # i=22 #TODO REMOVE THIS
     print 'Calculating on folder: ' + str(i) + '/' + str(len(image_path)) + '...'
 
     result = {'Error': '', 'BcSpot': None, 'MescSpot': None, 'MescProblem': None, 'BloodPresent': None}
