@@ -233,15 +233,15 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
     diff_img = (ref_img.astype('int16')+compensation - chm_img).clip(min=0)
     mask = np.logical_and(diff_img > 4, r < .75)
     ratio = np.mean(mask[r < .75])
-    has_beads = ratio > setting['RatioThres']
 
     # Also try to find centroid of largest object. Go to centroid calc ratio in vicinity
-    if not has_beads and ratio > .1:
-        j, i = np.meshgrid(np.arange(1, np.size(mask, 1) + 1), np.arange(1, np.size(mask, 0) + 1))
-        center_mask = np.logical_and((i - np.mean(i[mask]))**2 + (j - np.mean(j[mask]))**2 < 70**2, r < .75)
-        new_ratio = np.sum(mask[center_mask]).astype('f') / np.sum(center_mask)
-        has_beads = new_ratio > 2*setting['RatioThres']
+    j, i = np.meshgrid(np.arange(1, np.size(mask, 1) + 1), np.arange(1, np.size(mask, 0) + 1))
+    center_mask = np.logical_and((i - np.mean(i[mask]))**2 + (j - np.mean(j[mask]))**2 < 60**2, r < .75)
+    new_ratio = np.sum(mask[center_mask]).astype('f') / np.sum(center_mask)
+    has_beads = ratio > 0.1 and new_ratio > 1.2 * ratio and (
+                ratio > setting['RatioThres'] or new_ratio > 2 * setting['RatioThres'])
 
+    # Remove spot close to right edge, i.e. beads that started dissolving
     j_avg = np.sum(np.sum(mask, axis=0)*np.arange(mask.shape[1])).astype('f')/(np.sum(mask)*mask.shape[1])
     has_beads = has_beads and j_avg < setting['jThres']
 
@@ -527,7 +527,7 @@ if __name__ == "__main__":
 
     # Load images
     if use_local_images:
-        image_folder = '/media/anders/-Anders-3-/Google Drev/BluSense/ImageLibrary_Plasma/Images_Monday_14_08_2017/0'
+        image_folder = '/media/anders/-Anders-5-/BluSense/D4_Images_18_09_2017/D4_Images_18_09_2017/false 2/D4.0D-20170911183831'
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()

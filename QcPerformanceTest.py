@@ -26,9 +26,9 @@ def load_expected_result_table():
                                       'Error': ''},
                         'Not_Filled': {'BcSpot': True, 'MescSpot': True, 'BloodPresent': np.NaN, 'MescProblem': True,
                                        'Error': ''},
-                        'Premature_Full': {'BcSpot': True, 'MescSpot': False, 'BloodPresent': np.NaN,
+                        'Premature_Full': {'BcSpot': True, 'MescSpot': np.NaN, 'BloodPresent': np.NaN,
                                            'MescProblem': False, 'Error': ''},
-                        'Premature_Partial': {'BcSpot': True, 'MescSpot': True, 'BloodPresent': np.NaN,
+                        'Premature_Partial': {'BcSpot': True, 'MescSpot': np.NaN, 'BloodPresent': np.NaN,
                                               'MescProblem': True, 'Error': ''}
                         }
 
@@ -80,6 +80,7 @@ if __name__ == "__main__":
     for c in positive_error.keys():
         positives = expected_result[c] == positive_error[c]
         negatives = expected_result[c] == (not positive_error[c])
+        positives, negatives = (a[~np.isnan(a)] for a in [positives, negatives])
         false_negative_rate = 1 - np.mean(compare_result[c][positives])
         false_positive_rate = 1 - np.mean(compare_result[c][negatives])
         print '{:>13} | False negatives= {:4.1f} % | False positives= {:4.1f} %'.format(c, 100 * false_negative_rate,
