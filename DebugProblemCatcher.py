@@ -7,8 +7,9 @@ import os
 # Remember to also add breakpoints in gutter, look for '_ = set breakpoint here'
 entries_to_test = ['BloodPresent', 'BcSpot', 'MescSpot', 'MescProblem']
 
-# Load table of results
+# Load table of results, choose one of the lines below
 expected_result, image_path = qct.load_expected_result_table()
+# expected_result, image_path = qct.load_sorted_results_table()
 
 # Run test and compare actual result to expectation
 for i in range(0, len(image_path)):
@@ -43,7 +44,8 @@ for i in range(0, len(image_path)):
     image_idx = 2
     chambers, _, _ = qc.find_chambers(image_files[image_idx])
     result['MescSpot'] = qc.detect_spot_mesc(chambers[1], dry_mesc_chamber)
-    if np.isin('MescSpot', entries_to_test) and result['MescSpot'] != expected_result['MescSpot'][i]:
+    if np.isin('MescSpot', entries_to_test) and result['MescSpot'] != expected_result['MescSpot'][i] and not np.isnan(
+            expected_result['MescSpot'][i]):
         print 'MescSpot failed: ' + dir_link
         _ = 'set breakpoint here'
 

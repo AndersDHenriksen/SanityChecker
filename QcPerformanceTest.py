@@ -7,7 +7,8 @@ import time
 
 def load_expected_result_table():
     """
-    Use excel table with manual annotation of images to construct expected result and image paths folder list.
+    Use folders with sorted samples (Good, No_beads, Premature_Full, ...) to construct expected result and image paths
+    folder list.
 
     :return: Tuple with pandas data frame with expected/correct result and list of image folders
     """
@@ -38,11 +39,59 @@ def load_expected_result_table():
     for cf in category_folders:
         data_path = os.path.join(main_path, cf)
         cf_image_paths = [os.path.join(data_path, f) for f in os.listdir(data_path)]
-        image_path = image_path + cf_image_paths
+        image_path += cf_image_paths
         cf_expected_result = pd.DataFrame(category_results[cf], index=range(len(cf_image_paths)))
         expected_result = expected_result.append(cf_expected_result, ignore_index=True)
 
     return expected_result, image_path
+
+def load_sorted_results_table():
+    """
+    Use integer code folders (0, 1, 2, etc.) with sorted samples to construct expected result and image paths folder
+    list.
+
+    :return: Tuple with pandas data frame with expected/correct result and list of image folders
+    """
+
+    main_path = '/media/anders/-Anders-5-/BluSense/D4_Images_18_09_2017'
+    category_folders = [cf for cf in os.listdir(main_path) if cf.isdigit() and len(cf) == 1]
+
+    image_path = []
+    expected_result = pd.DataFrame(columns=integer_to_result_dict(0).keys())
+    for cf in category_folders:
+        data_path = os.path.join(main_path, cf)
+        cf_image_paths = [os.path.join(data_path, f) for f in os.listdir(data_path)]
+        image_path += cf_image_paths
+        cf_expected_result = pd.DataFrame(integer_to_result_dict(int(cf)), index=range(len(cf_image_paths)))
+        expected_result = expected_result.append(cf_expected_result, ignore_index=True)
+
+    return expected_result, image_path
+
+
+def integer_to_result_dict(result_integer, blood_test=False):
+    # Set up default result, i.e. exit code 0
+    """
+    Convert integer/exit code to result dictionary as returned AllChecks.py: sanity_checker
+    """
+    result = {'Error': '', 'BcSpot': True, 'MescSpot': True, 'MescProblem': False,
+              'BloodPresent': True if blood_test else np.NaN}
+
+    # If exit code -1, some error occurred. Error text can vary.
+    if result_integer == -1:
+        result['Error'] = 'Error'
+
+    # Change default dict based on binary code
+    change_key = ['BloodPresent', 'MescProblem', 'MescSpot', 'BcSpot']
+    result_binary = '{0:04b}'.format(result_integer)
+    for index, key in enumerate(change_key):
+        if result_binary[index] == '1':
+            result[key] = not result[key]
+
+    # If MescProblem has been changed, also change MescSpot
+    if result['MescProblem'] == True:
+        result['MescSpot'] = np.NaN
+
+    return result
 
 
 if __name__ == "__main__":

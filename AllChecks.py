@@ -242,7 +242,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
                 ratio > setting['RatioThres'] or new_ratio > 2 * setting['RatioThres'])
 
     # Remove spot close to right edge, i.e. beads that started dissolving
-    j_avg = np.sum(np.sum(mask, axis=0)*np.arange(mask.shape[1])).astype('f')/(np.sum(mask)*mask.shape[1])
+    j_avg = float(np.nonzero(np.cumsum(np.sum(mask, axis=0)) > 0.5*np.sum(mask))[0][0])/mask.shape[1]
     has_beads = has_beads and j_avg < setting['jThres']
 
     if debug:
