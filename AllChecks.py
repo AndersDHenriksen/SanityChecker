@@ -1,7 +1,8 @@
 import numpy as np
 import cv2
 from skimage import morphology, measure, segmentation
-import astropy.convolution
+from scipy.ndimage.morphology import distance_transform_edt
+from astropy.convolution import convolve_fft
 import argparse
 import os
 # packages below this line are not crucial
@@ -23,7 +24,7 @@ def find_chambers(image_path, blood_also=False, debug=False):
 
     # Define settings and output
     setting = {'PositionExpected': (1380, 2500), 'CutSide': 500, 'BcOffsetToRefImg': (-34, -610), 'BcRi': 146,
-               'BcRj': 160, 'MescOffsetToRefImg': (2, 24), 'MescR': 142, 'BloodRatio': (0.25, 0.5), 'xCorMin': 0.1}
+               'BcRj': 160, 'MescOffsetToRefImg': (2, 24), 'MescR': 142, 'BloodRatio': (0.4, 0.6), 'xCorMin': 0.1}
     poly_bss = np.array(
         [(2251, 1968), (2194, 2282), (2233, 2408), (2308, 2426), (2418, 1866), (2359, 1857), (2251, 1968)], dtype='int')
     poly_ofc2 = np.array([(560, 2480), (524, 2109), (374, 2381), (560, 2480)], dtype='int')
@@ -46,7 +47,7 @@ def find_chambers(image_path, blood_also=False, debug=False):
     cut_out = image[setting['PositionExpected'][0] - setting['CutSide']:setting['PositionExpected'][0] + setting['CutSide'],
                     setting['PositionExpected'][1] - setting['CutSide']:setting['PositionExpected'][1] + setting['CutSide']]
 
-    xcor_mesc = astropy.convolution.convolve_fft(imgradient(cut_out) > 60, grad_mask_mesc_chamber_reversed, 'wrap')
+    xcor_mesc = convolve_fft(imgradient(cut_out) > 60, grad_mask_mesc_chamber_reversed, 'wrap')
     if np.max(xcor_mesc) < setting['xCorMin']:
         error = 'Chambers could not be detected for:' + image_path
         return chambers, error, blood_present
@@ -68,7 +69,8 @@ def find_chambers(image_path, blood_also=False, debug=False):
             mask = np.zeros(image.shape, dtype='uint8')
             poly += d_xcor[::-1]
             cv2.fillConvexPoly(mask, poly, True)
-            blood_present[i] = np.mean(image[mask.astype('bool')]) / image_mean < setting['BloodRatio'][i]
+            ptile = 2.5 if i == 1 else 25
+            blood_present[i] = np.percentile(image[mask.astype('bool')], ptile) / image_mean < setting['BloodRatio'][i]
 
     # Show image output if true debug flag
     if debug:
@@ -352,14 +354,45 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
 
     # Overflow is high intensity line and not last pixels
     max_idx = np.argmax(average_diff)
-    mesc_overflow = average_diff[max_idx] > 30 and np.sum(average_diff[max_idx:] > 0) > 4
+    mesc_overflow = (average_diff[max_idx] > 30 or find_clusters(average_diff > 18, 2, 10)) and np.sum(
+                    average_diff[max_idx:] > 0) > 4
 
     # Look for mesc bubble at certain region and size
     if not mesc_overflow and np.mean(diff_img[r < .9]) < 9:
-        bubble_thres = min(15, 2 * np.mean(diff_img) + 5)
+        bubble_thres = max(10, min(15, 2 * np.mean(diff_img) + 5))
         bubble_mask = np.logical_and.reduce((diff_img < bubble_thres, r < .9, x < .25))
         _, bubble_areas = bwareafilt(bubble_mask, area_range=(400, 20000))
-        mesc_overflow = 2 * (np.sum(bubble_areas) > 250)
+        if bubble_areas:  # Bubble must also exist when including the x > .25 region
+            bubble_mask2 = np.logical_and(diff_img < bubble_thres, r < .9)
+            _, bubble_areas2 = bwareafilt(bubble_mask2, area_range=(400, 20000))
+        mesc_overflow = 2 * (bubble_areas > 0 and bubble_areas2 > 0)
+
+        # Find points where bubble wall intercepts r = .9 circle
+        bubble_edge = diff_img > bubble_thres
+        kernel_c5 = cv2.getStructuringElement(cv2.MORPH_CROSS, (5, 5))
+        bubble_edge = cv2.morphologyEx(bubble_edge.astype('uint8'), cv2.MORPH_CLOSE, kernel_c5).astype('bool')
+        bubble_edge_points = np.logical_and.reduce((bubble_edge, r > 0.893, r < .9))
+        bubble_edge_points, _ = bwareafilt(bubble_edge_points, n=100, area_range=(5, 1e6))
+        bubble_cor = np.argwhere(bubble_edge_points)
+
+        # If there's any bubble edge points, there will properly be many. Loop through points and remove close ones
+        if len(bubble_cor):
+            keep_idx = ([np.sum(bubble_cor[i] - bubble_cor[i - 1]) ** 2 > 10 for i in range(1, bubble_cor.shape[0])])
+            keep_idx.append(True)
+            bubble_cor = bubble_cor[keep_idx]
+
+            # Loop through edge points to see if they are part of bubble
+            for i in range(len(bubble_cor)):
+                if mesc_overflow == 0:
+                    mesc_overflow, keep_idx[i] = extend_bubble_edge(bubble_cor[i], bubble_edge, 20, 200, r, x)
+            bubble_cor = bubble_cor[keep_idx[:i+1]]
+
+            # Now loop through edge point pairs and se if they are close to forming a full bubble edge
+            for i in range(len(bubble_cor)):
+                for j in range(i + 1, len(bubble_cor)):
+                    dist = np.sqrt(np.sum((bubble_cor[i] - bubble_cor[j])**2))
+                    if dist > 50 and mesc_overflow == 0:
+                        mesc_overflow, _ = extend_bubble_edge(bubble_cor[[i, j]], bubble_edge, dist/20, 300, r, x)
 
     # If print output is desired
     # print conclusions[mesc_overflow]
@@ -374,6 +407,21 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
             plt.imshow(bubble_mask)
 
     return mesc_overflow
+
+
+def extend_bubble_edge(bubble_cor, bubble_edge, extend_dist, area_min, r, x):
+    """ Extend bubble edge for bubble coordinates and look if bubble of area_min is formed."""
+    marker = np.zeros_like(bubble_edge)
+    if len(bubble_cor.shape) == 1:
+        marker[bubble_cor[0], bubble_cor[1]] = True
+    else:
+        for bc in bubble_cor:
+            marker[bc[0], bc[1]] = True
+    bubble_extension = imreconstruct(marker, bubble_edge)
+    mask_extended = distance_transform_edt(np.logical_not(bubble_extension)) > extend_dist
+    bubble_mask = np.logical_and.reduce((mask_extended, r < .9, x < .25))
+    _, bubble_areas = bwareafilt(bubble_mask, area_range=(area_min, 20000))
+    return 2 * (bubble_areas > 0), min(r[bubble_extension]) < .5
 
 
 def get_overlap_images(img1, img2, translation=None):
@@ -428,7 +476,7 @@ def corr2d(img1, img2, max_movement=12):
     """
 
     # Calculate fft based 2d cross-correlation
-    xcorr2d = astropy.convolution.convolve_fft(img1, img2[::-1, ::-1], 'wrap')
+    xcorr2d = convolve_fft(img1, img2[::-1, ::-1], 'wrap')
 
     # Calculate image midpoints
     mid_points = (np.array(np.shape(xcorr2d)) - 1) / 2
@@ -462,6 +510,41 @@ def corr2d(img1, img2, max_movement=12):
 
     # Recalculate midpoint and make it relative
     return delta_ij + np.array([i_idx, j_idx]) - mid_points
+
+
+def find_clusters(a, allowed_jump=0, min_size=1):
+    """
+    Find clusters, where the index has jumps/discontinuities, i.e. [1, 2, 3, 7, 8, 9] contains 2 clusters.
+
+    :param a: array for cluster search. Can be array of index or bool values.
+    :type a: np.core.multiarray.ndarray
+    :param allowed_jump: discontinuities which should not be considered a cluster break
+    :type allowed_jump: int
+    :param min_size: minimum cluster size to keep
+    :type min_size: int
+    :return: list of clusters as np.arrays
+    :rtype: list
+    """
+
+    # Convert to index if bool
+    if a.dtype == np.bool:
+        a = np.flatnonzero(a)
+
+    # Walk through array and find clusters
+    da = np.diff(a)
+    clusters = []
+    current_cluster_size = 1
+    for i in range(1, len(a)):
+        if da[i-1] > allowed_jump + 1:
+            if current_cluster_size >= min_size:
+                clusters.append(a[i-current_cluster_size:i])
+            current_cluster_size = 1
+        else:
+            current_cluster_size += 1
+    if current_cluster_size >= min_size:
+        clusters.append(a[len(a) - current_cluster_size:])
+
+    return clusters
 
 
 def sanity_checker(image_paths, blood_test=False):
@@ -527,7 +610,7 @@ if __name__ == "__main__":
 
     # Load images
     if use_local_images:
-        image_folder = '/media/anders/-Anders-5-/BluSense/D4_Images_18_09_2017/D4_Images_18_09_2017/false 2/D4.0D-20170911183831'
+        image_folder = '/media/anders/-Anders-5-/BluSense/27_09_2017 Whole blood Images/0/D4.0O-20170921090625'
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()
