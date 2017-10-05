@@ -1,11 +1,10 @@
 import numpy as np
 import cv2
 from skimage import morphology, measure, segmentation
-from scipy.ndimage.morphology import distance_transform_edt
-from astropy.convolution import convolve_fft
 import argparse
 import os
 # packages below this line are not crucial
+from astropy.convolution import convolve_fft
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import glob
@@ -36,23 +35,24 @@ def find_chambers(image_path, blood_also=False, debug=False):
     image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2GRAY)
     script_path = os.path.dirname(os.path.abspath(__file__))
 
-    # The image "grad_mask_mesc_chamber_reversed" is constructed using:
+    # The image "grad_mask_mesc_chamber" is constructed using:
     # image_mesc_chamber = cv2.cvtColor(cv2.imread(os.path.join(script_path, 'Data', 'labelfree_mesc_chamber.png')),
     #                                   cv2.COLOR_BGR2GRAY)
     # mask_mesc_chamber = imgradient(image_mesc_chamber) > 60
 
-    grad_mask_mesc_chamber_reversed = cv2.imread(
-        os.path.join(script_path, 'Data', 'grad_mask_mesc_chamber_reversed.png'), cv2.COLOR_BGR2GRAY).astype('bool')
+    grad_mask_mesc_chamber = cv2.imread(os.path.join(script_path, 'Data', 'grad_mask_mesc_chamber.png'),
+                                        cv2.COLOR_BGR2GRAY)
 
     cut_out = image[setting['PositionExpected'][0] - setting['CutSide']:setting['PositionExpected'][0] + setting['CutSide'],
                     setting['PositionExpected'][1] - setting['CutSide']:setting['PositionExpected'][1] + setting['CutSide']]
 
-    xcor_mesc = convolve_fft(imgradient(cut_out) > 60, grad_mask_mesc_chamber_reversed, 'wrap')
-    if np.max(xcor_mesc) < setting['xCorMin']:
+    xcor_match = cv2.matchTemplate((imgradient(cut_out) > 60).astype(np.uint8), grad_mask_mesc_chamber, cv2.TM_CCORR_NORMED)
+    _, xcor_max, __, top_left = cv2.minMaxLoc(xcor_match)
+    d_xcor = (np.array(top_left[::-1]) + np.array(grad_mask_mesc_chamber.shape) / 2 - np.array(cut_out.shape) / 2)
+    if xcor_max < setting['xCorMin'] or np.any(np.abs(d_xcor) > 250):
         error = 'Chambers could not be detected for:' + image_path
         return chambers, error, blood_present
-    i_max, j_max = np.unravel_index(xcor_mesc.argmax(), xcor_mesc.shape)
-    d_xcor = np.array([i_max, j_max]) - (np.array(np.shape(xcor_mesc)) + 1)/2
+
     idx_ref = np.array(setting['PositionExpected']) + d_xcor
 
     cor_bc = idx_ref + np.array(setting['BcOffsetToRefImg'])
@@ -100,6 +100,7 @@ def imgradient(img):
 
 def bwareafilt(mask, n=1, area_range=(0, np.inf)):
     """Extract objects from binary image by size """
+    # For openCV > 3.0 this can be changed to: areas_num, labels = cv2.connectedComponents(mask.astype(np.uint8))
     labels = measure.label(mask.astype('uint8'), background=0)
     area_idx = np.arange(1, np.max(labels) + 1)
     areas = np.array([np.sum(labels == i) for i in area_idx])
@@ -141,7 +142,7 @@ def detect_spot_bc(chamber, reference_chamber, debug=False):
 
     # Align chamber images and radius image
     chm_img, ref_img = get_overlap_images(chamber.Img, reference_chamber.Img)
-    translation = corr2d(chm_img, ref_img)
+    translation = corr2d_ocv(chm_img, ref_img)
     r, _ = get_overlap_images(chamber.R, reference_chamber.R)
     r, _ = get_overlap_images(r, ref_img, translation)
     chm_img, ref_img = get_overlap_images(chm_img, ref_img, translation)
@@ -215,7 +216,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
 
     # Align chamber images and radius image
     chm_img, ref_img = get_overlap_images(chamber.Img, reference_chamber.Img)
-    translation = corr2d(chm_img, ref_img)
+    translation = corr2d_ocv(chm_img, ref_img)
     r, _ = get_overlap_images(chamber.R, reference_chamber.R)
     r, _ = get_overlap_images(r, ref_img, translation)
     chm_img, ref_img = get_overlap_images(chm_img, ref_img, translation)
@@ -240,7 +241,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
     j, i = np.meshgrid(np.arange(1, np.size(mask, 1) + 1), np.arange(1, np.size(mask, 0) + 1))
     center_mask = np.logical_and((i - np.mean(i[mask]))**2 + (j - np.mean(j[mask]))**2 < 60**2, r < .75)
     new_ratio = np.sum(mask[center_mask]).astype('f') / np.sum(center_mask)
-    has_beads = ratio > 0.1 and new_ratio > 1.2 * ratio and (
+    has_beads = ratio > 0.1 and new_ratio > 1.18 * ratio and (
                 ratio > setting['RatioThres'] or new_ratio > 2 * setting['RatioThres'])
 
     # Remove spot close to right edge, i.e. beads that started dissolving
@@ -329,7 +330,7 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
 
     # Calculate translation between images and overlaps
     chm_img, ref_img = get_overlap_images(chamber.Img, reference_chamber.Img)
-    translation = corr2d(chm_img, ref_img)
+    translation = corr2d_ocv(chm_img, ref_img)
     r, _ = get_overlap_images(chamber.R, reference_chamber.Img)
     x, _ = get_overlap_images(chamber.X, reference_chamber.Img)
     r, _ = get_overlap_images(r, ref_img, translation)
@@ -418,7 +419,8 @@ def extend_bubble_edge(bubble_cor, bubble_edge, extend_dist, area_min, r, x):
         for bc in bubble_cor:
             marker[bc[0], bc[1]] = True
     bubble_extension = imreconstruct(marker, bubble_edge)
-    mask_extended = distance_transform_edt(np.logical_not(bubble_extension)) > extend_dist
+    mask_extended = cv2.distanceTransform(np.logical_not(bubble_extension).astype('uint8'),
+                                          cv2.cv.CV_DIST_L2, 5) > extend_dist
     bubble_mask = np.logical_and.reduce((mask_extended, r < .9, x < .25))
     _, bubble_areas = bwareafilt(bubble_mask, area_range=(area_min, 20000))
     return 2 * (bubble_areas > 0), min(r[bubble_extension]) < .5
@@ -461,6 +463,12 @@ def get_overlap_images(img1, img2, translation=None):
             out_img2 = out_img2[:, side2_idx]
 
     return out_img1, out_img2
+
+
+def corr2d_ocv(img1, img2):
+    """ Calculate translation betweeen image 1 and 2 using cv2.phaseCorrelate. """
+    res = cv2.phaseCorrelate(img1.astype(np.float),img2.astype(np.float))
+    return -np.array(res[::-1])
 
 
 def corr2d(img1, img2, max_movement=12):
