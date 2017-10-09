@@ -468,6 +468,8 @@ def get_overlap_images(img1, img2, translation=None):
 def corr2d_ocv(img1, img2):
     """ Calculate translation betweeen image 1 and 2 using cv2.phaseCorrelate. """
     res = cv2.phaseCorrelate(img1.astype(np.float),img2.astype(np.float))
+    if isinstance(res[0], tuple):
+        res = res[0]
     return -np.array(res[::-1])
 
 
