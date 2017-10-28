@@ -245,7 +245,8 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
                 ratio2 > 2 * setting['RatioThres'])
 
     # Remove spot close to right edge, i.e. beads that started dissolving
-    j_avg = float(np.flatnonzero(np.cumsum(np.sum(mask, axis=0)) > 0.5*np.sum(mask))[0])/mask.shape[1]
+    largest_cc, largest_cc_area = bwareafilt(mask, n=1)
+    j_avg = float(np.flatnonzero(np.cumsum(np.sum(largest_cc, axis=0)) > 0.5 * np.sum(largest_cc))[0]) / mask.shape[1]
     has_beads = has_beads and j_avg < setting['jThres']
 
     if debug:
@@ -419,10 +420,17 @@ def extend_bubble_edge(bubble_cor, bubble_edge, extend_dist, area_min, r, x):
         for bc in bubble_cor:
             marker[bc[0], bc[1]] = True
     bubble_extension = imreconstruct(marker, bubble_edge)
+    if r[bubble_extension].mean() > 0.85:
+        return 0, 0
     mask_extended = cv2.distanceTransform(np.logical_not(bubble_extension).astype('uint8'),
-                                          cv2.cv.CV_DIST_L2, 5) > extend_dist
-    bubble_mask = np.logical_and.reduce((mask_extended, r < .9, x < .25))
-    _, bubble_areas = bwareafilt(bubble_mask, area_range=(area_min, 20000))
+                                          cv2.cv.CV_DIST_L2, 5) < extend_dist
+    bubble_extended = np.logical_not(np.logical_or(mask_extended, imreconstruct(mask_extended, bubble_edge)))
+    bubble_mask = np.logical_and.reduce((bubble_extended, r < .9, x < .25))
+    bubbles_potentials, bubble_areas = bwareafilt(bubble_mask, area_range=(area_min, 20000))
+    if bubble_areas > 0:
+        labels = measure.label(bubbles_potentials.astype('uint8'), background=0)
+        good_idx = [x[labels == l].max() < .24 for l in range(1, np.max(labels) + 1)]
+        bubble_areas = np.any(good_idx)
     return 2 * (bubble_areas > 0), min(r[bubble_extension]) < .5
 
 
@@ -620,7 +628,7 @@ if __name__ == "__main__":
 
     # Load images
     if use_local_images:
-        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/wrong_0/D4.0P-20170904114353'
+        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/wrong_0/D4.0P-20170904103308'
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()
