@@ -382,6 +382,7 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
 
     # Overflow is high intensity line and not last pixels
     average_diff[np.flatnonzero(average_diff > 0)[-5:]] = 0
+    average_diff[np.flatnonzero(average_diff > 0)[:5]] = 0
     mesc_overflow = np.any(average_diff > 30) or len(find_clusters(average_diff > 18, 2, 10)) or len(
                     find_clusters(np.max(diff_img * (r < .9), axis=1) > 18, allowed_jump=30, min_size=175))
 
@@ -656,7 +657,7 @@ if __name__ == "__main__":
 
     # Load images
     if use_local_images:
-        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/wrong_0/D4.0G-20170817153102'
+        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/Error_but_okay/D4.0B-20170904123001'
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()
