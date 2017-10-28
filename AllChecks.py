@@ -183,6 +183,36 @@ def detect_spot_bc(chamber, reference_chamber, debug=False):
     return has_spot
 
 
+def detect_spot_mesc_dissapear(chamber, reference_chamber):
+    """ Detect if bead spot is present in reference MESC-chamber but much smaller in current MESC-chamber. """
+    # Align chamber images and radius image
+    chm_img, ref_img = get_overlap_images(chamber.Img, reference_chamber.Img)
+    translation = corr2d_ocv(chm_img, ref_img)
+    r, _ = get_overlap_images(chamber.R, reference_chamber.R)
+    r, _ = get_overlap_images(r, ref_img, translation)
+    chm_img, ref_img = get_overlap_images(chm_img, ref_img, translation)
+
+    # Perform filtering to reduce noise and level out mean offset
+    chm_img = cv2.medianBlur(chm_img, 3)
+    ref_img = cv2.medianBlur(ref_img, 3)
+
+    # See if blob at same location and approx. size
+    inner_mask = r < 0.9
+    ref_inner = ref_img[inner_mask]
+    ref_mask = ref_img > ref_inner.mean() + ref_inner.std()
+    ref_noborder = segmentation.clear_border(np.logical_or(ref_mask, np.logical_not(inner_mask)))
+    ref_blob, ref_blob_area = bwareafilt(ref_noborder)
+    if ref_blob_area > 2e3:
+        chm_inner = chm_img[inner_mask]
+        chm_mask = chm_img > chm_inner.mean() + ref_inner.std()
+        chm_noborder = segmentation.clear_border(np.logical_or(chm_mask, np.logical_not(inner_mask)))
+        chm_blob, chm_blob_area = bwareafilt(chm_noborder)
+        if float(ref_blob_area)/chm_blob_area > 3.5 and float(ref_blob_area)/chm_mask[r < 0.83].sum() > 2:
+            return True
+    return False
+
+
+
 def detect_spot_mesc(chamber, reference_chamber, debug=False):
     """ Detect beads spot in MESC chamber.
 
@@ -580,13 +610,15 @@ def sanity_checker(image_paths, blood_test=False):
     result['BcSpot'] = detect_spot_bc(chambers[0], reference_chambers[0])
     result['MescProblem'] = detect_badfill_mesc(chambers[1], reference_chambers[1])
     dry_mesc_chamber = chambers[1]
+    result['MescSpot'] = not detect_spot_mesc_dissapear(dry_mesc_chamber, reference_chambers[1])
 
     # Image 2
     image_idx = 2
     chambers, result['Error'], _ = find_chambers(image_paths[image_idx])
     if result['Error'] != '':
         return result
-    result['MescSpot'] = detect_spot_mesc(chambers[1], dry_mesc_chamber)
+    if result['MescSpot']:
+        result['MescSpot'] = detect_spot_mesc(chambers[1], dry_mesc_chamber)
     if result['MescProblem'] == 0:
         result['MescProblem'] = detect_badfill_mesc(chambers[1], reference_chambers[1])
 
@@ -624,7 +656,7 @@ if __name__ == "__main__":
 
     # Load images
     if use_local_images:
-        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/wrong_0/D4.0E-20171017141426'
+        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/wrong_0/D4.0G-20170817153102'
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()
