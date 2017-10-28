@@ -8,8 +8,8 @@ import os
 entries_to_test = ['BloodPresent', 'BcSpot', 'MescSpot', 'MescProblem']
 
 # Load table of results, choose one of the lines below
-# expected_result, image_path = qct.load_expected_result_table()
-expected_result, image_path = qct.load_sorted_results_table()
+expected_result, image_path = qct.load_expected_result_table()
+# expected_result, image_path = qct.load_sorted_results_table()
 
 # Run test and compare actual result to expectation
 for i in range(0, len(image_path)):
@@ -48,6 +48,7 @@ for i in range(0, len(image_path)):
             expected_result['MescSpot'][i]):
         print 'MescSpot failed: ' + dir_link
         _ = 'set breakpoint here'
+        qc.detect_spot_mesc(chambers[1], dry_mesc_chamber, True)
 
     if result['MescProblem'] == 0:
         result['MescProblem'] = qc.detect_badfill_mesc(chambers[1], reference_chambers[1])

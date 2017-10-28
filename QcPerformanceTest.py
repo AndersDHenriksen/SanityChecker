@@ -98,8 +98,8 @@ def integer_to_result_dict(result_integer, blood_test=False):
 if __name__ == "__main__":
 
     # Get expected result
-    # expected_result, image_path = load_expected_result_table()
-    expected_result, image_path = load_sorted_results_table()
+    expected_result, image_path = load_expected_result_table()
+    # expected_result, image_path = load_sorted_results_table()
 
     # Initialize comparison DataFrame
     compare_result = pd.DataFrame(np.nan, index=range(len(image_path)), columns=expected_result.columns)

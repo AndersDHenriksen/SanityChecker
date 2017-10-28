@@ -199,11 +199,6 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
                'UseRadialCorrection': True, 'UseMedianFilter': True}
     conclusions = ['Beads NOT detected in MESC chamber.', 'Beads detected in MESC chamber.']
 
-    # First try simple detection
-    has_beads = simple_bead_spot_detection(reference_chamber)
-    if has_beads:
-        return has_beads - simple_bead_spot_detection(chamber)
-
     # Compensate out intensity slopes
     if setting['UseLinearCorrection']:
         linear_correction(chamber)
@@ -226,6 +221,21 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
         chm_img = cv2.medianBlur(chm_img, 3)
         ref_img = cv2.medianBlur(ref_img, 3)
 
+    # See if blob at same location and approx. size
+    inner_mask = r < 0.9
+    chm_inner = chm_img[inner_mask]
+    chm_mask = chm_img > chm_inner.mean() + chm_inner.std()
+    chm_noborder = segmentation.clear_border(np.logical_or(chm_mask, np.logical_not(inner_mask)))
+    chm_blob, chm_blob_area = bwareafilt(chm_noborder)
+    if chm_blob_area > 2e3:
+        ref_inner = ref_img[inner_mask]
+        ref_mask = ref_img > ref_inner.mean() + ref_inner.std()
+        ref_noborder = segmentation.clear_border(np.logical_or(ref_mask, np.logical_not(inner_mask)))
+        ref_blob, ref_blob_area = bwareafilt(ref_noborder)
+        overlap = float(np.logical_and(ref_blob, chm_blob).sum()) / np.logical_or(ref_blob, chm_blob).sum()
+        if overlap > 0.55 and 3.0/2 > float(chm_blob_area)/ref_blob_area > 2.0/3:
+            return False
+
     if setting['CompensateAverage']:
         mask = np.logical_and(r < .9, r > .5)
         compensation = (np.mean(chm_img[mask]) - np.mean(ref_img[mask]))
@@ -233,7 +243,12 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
         compensation = 0
 
     # Get difference between chambers and detect beads
-    diff_img = (ref_img.astype('int16')+compensation - chm_img).clip(min=0)
+    diff_img = (ref_img.astype('int16')+compensation - chm_img)
+    if ((diff_img * (r < .75))**2).sum() < 1.1e5:
+        return False
+    else:
+        diff_img = diff_img.clip(min=0)
+
     mask = np.logical_and(diff_img > 4, r < .75)
     ratio1 = np.mean(mask[r < .75])
 
@@ -247,7 +262,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
     # Remove spot close to right edge, i.e. beads that started dissolving
     largest_cc, largest_cc_area = bwareafilt(mask, n=1)
     j_avg = float(np.flatnonzero(np.cumsum(np.sum(largest_cc, axis=0)) > 0.5 * np.sum(largest_cc))[0]) / mask.shape[1]
-    has_beads = has_beads and j_avg < setting['jThres']
+    has_beads = has_beads and j_avg < setting['jThres'] and largest_cc_area > 300
 
     if debug:
         plt.figure()
@@ -262,25 +277,6 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
         plt.subplot(2, 2, 4)
         plt.imshow(chm_img)
     return has_beads
-
-
-def simple_bead_spot_detection(chamber):
-    """ Try to identify if bead spot is present based on area and solidity for intensity thresholding """
-
-    inner = chamber.R < .75
-    spot = [np.NaN]*7
-    background = round(np.mean(chamber.Img[chamber.R < .8]))
-    kernel_r3 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-    for i in range(7):
-        intensity_mask = np.logical_and(chamber.Img > (i + background), inner)
-        intensity_mask = segmentation.clear_border(np.logical_or(intensity_mask, np.logical_not(inner)))
-        only_biggest, biggest_area = bwareafilt(intensity_mask)
-        area_ratio = biggest_area.astype('f') / np.sum(inner)
-        clump_ratio = biggest_area.astype('f') / np.sum(intensity_mask)
-        eroded_area = np.sum(cv2.erode(only_biggest.astype('uint8'), kernel_r3))
-        solidity = eroded_area.astype('f') / biggest_area
-        spot[i] = clump_ratio > .75 and area_ratio > .1 and solidity > .4
-    return np.any(spot)
 
 
 def linear_correction(chamber):
@@ -628,7 +624,7 @@ if __name__ == "__main__":
 
     # Load images
     if use_local_images:
-        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/wrong_0/D4.0P-20170904103308'
+        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/wrong_0/D4.0E-20171017141426'
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()
