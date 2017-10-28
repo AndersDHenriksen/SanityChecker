@@ -235,17 +235,17 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
     # Get difference between chambers and detect beads
     diff_img = (ref_img.astype('int16')+compensation - chm_img).clip(min=0)
     mask = np.logical_and(diff_img > 4, r < .75)
-    ratio = np.mean(mask[r < .75])
+    ratio1 = np.mean(mask[r < .75])
 
     # Also try to find centroid of largest object. Go to centroid calc ratio in vicinity
     j, i = np.meshgrid(np.arange(1, np.size(mask, 1) + 1), np.arange(1, np.size(mask, 0) + 1))
     center_mask = np.logical_and((i - np.mean(i[mask]))**2 + (j - np.mean(j[mask]))**2 < 60**2, r < .75)
-    new_ratio = np.sum(mask[center_mask]).astype('f') / np.sum(center_mask)
-    has_beads = ratio > 0.1 and new_ratio > 1.18 * ratio and (
-                ratio > setting['RatioThres'] or new_ratio > 2 * setting['RatioThres'])
+    ratio2 = np.sum(mask[center_mask]).astype('f') / np.sum(center_mask)
+    has_beads = ratio1 > 0.1 and ratio2 > 1.18 * ratio1 and (ratio1 > setting['RatioThres'] or
+                ratio2 > 2 * setting['RatioThres'])
 
     # Remove spot close to right edge, i.e. beads that started dissolving
-    j_avg = float(np.nonzero(np.cumsum(np.sum(mask, axis=0)) > 0.5*np.sum(mask))[0][0])/mask.shape[1]
+    j_avg = float(np.flatnonzero(np.cumsum(np.sum(mask, axis=0)) > 0.5*np.sum(mask))[0])/mask.shape[1]
     has_beads = has_beads and j_avg < setting['jThres']
 
     if debug:
@@ -255,7 +255,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
         plt.title(conclusions[has_beads])
         plt.subplot(2, 2, 2)
         plt.imshow(np.logical_and(diff_img > 4, r < .75))
-        plt.title('Ratio: %.2f' % ratio)
+        plt.title('Ratio: %.2f' % ratio1)
         plt.subplot(2, 2, 3)
         plt.imshow(ref_img)
         plt.subplot(2, 2, 4)
@@ -354,9 +354,9 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
     average_diff = np.sum(diff_img, axis=0) / (.1 + np.sum(r <= setting['RCutOff'], axis=0))
 
     # Overflow is high intensity line and not last pixels
-    max_idx = np.argmax(average_diff)
-    mesc_overflow = (average_diff[max_idx] > 30 or find_clusters(average_diff > 18, 2, 10)) and np.sum(
-                    average_diff[max_idx:] > 0) > 4
+    average_diff[np.flatnonzero(average_diff > 0)[-5:]] = 0
+    mesc_overflow = np.any(average_diff > 30) or len(find_clusters(average_diff > 18, 2, 10)) or len(
+                    find_clusters(np.max(diff_img * (r < .9), axis=1) > 18, allowed_jump=30, min_size=175))
 
     # Look for mesc bubble at certain region and size
     if not mesc_overflow and np.mean(diff_img[r < .9]) < 9:
@@ -467,7 +467,7 @@ def get_overlap_images(img1, img2, translation=None):
 
 def corr2d_ocv(img1, img2):
     """ Calculate translation betweeen image 1 and 2 using cv2.phaseCorrelate. """
-    res = cv2.phaseCorrelate(img1.astype(np.float),img2.astype(np.float))
+    res = cv2.phaseCorrelate(img1.astype(np.float), img2.astype(np.float))
     if isinstance(res[0], tuple):
         res = res[0]
     return -np.array(res[::-1])
@@ -620,7 +620,7 @@ if __name__ == "__main__":
 
     # Load images
     if use_local_images:
-        image_folder = '/media/anders/-Anders-5-/BluSense/27_09_2017 Whole blood Images/0/D4.0O-20170921090625'
+        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/wrong_0/D4.0P-20170904114353'
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()
@@ -652,9 +652,9 @@ if __name__ == "__main__":
 
     # Install instructions for Anaconda 3.6
     # conda update conda
-    # conda create -n cv python=2.7.13 anaconda
-    # activate cv
-    # conda install -n cv -c menpo opencv=2.4.11
+    # conda create -n cv python=2.7 anaconda
+    # source activate cv
+    # conda install -n cv -c menpo opencv
     #
     # Other usefull comamnds:
     # source deactivate

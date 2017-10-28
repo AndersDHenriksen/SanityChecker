@@ -8,8 +8,8 @@ import os
 entries_to_test = ['BloodPresent', 'BcSpot', 'MescSpot', 'MescProblem']
 
 # Load table of results, choose one of the lines below
-expected_result, image_path = qct.load_expected_result_table()
-# expected_result, image_path = qct.load_sorted_results_table()
+# expected_result, image_path = qct.load_expected_result_table()
+expected_result, image_path = qct.load_sorted_results_table()
 
 # Run test and compare actual result to expectation
 for i in range(0, len(image_path)):

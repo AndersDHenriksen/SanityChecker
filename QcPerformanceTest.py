@@ -14,7 +14,7 @@ def load_expected_result_table():
     """
 
     # Define main paths, categories and their results
-    main_path = '/media/anders/-Anders-3-/Google Drev/BluSense/ImageLibrary_Plasma'
+    main_path = '/media/anders/-Anders-5-/BluSense/ImageLibrary_Plasma'
     category_folders = ['Good', 'No_Beads', 'No_Reagents', 'No_Sample', 'Not_Filled', 'Premature_Partial',
                         'Premature_Full']
     category_results = {'Good': {'BcSpot': True, 'MescSpot': True, 'BloodPresent': np.NaN, 'MescProblem': False,
@@ -45,6 +45,7 @@ def load_expected_result_table():
 
     return expected_result, image_path
 
+
 def load_sorted_results_table():
     """
     Use integer code folders (0, 1, 2, etc.) with sorted samples to construct expected result and image paths folder
@@ -53,7 +54,7 @@ def load_sorted_results_table():
     :return: Tuple with pandas data frame with expected/correct result and list of image folders
     """
 
-    main_path = '/media/anders/-Anders-5-/BluSense/D4_Images_18_09_2017'
+    main_path = '/media/anders/-Anders-5-/BluSense/20170918_Images'
     category_folders = [cf for cf in os.listdir(main_path) if cf.isdigit() and len(cf) == 1]
 
     image_path = []
@@ -88,7 +89,7 @@ def integer_to_result_dict(result_integer, blood_test=False):
             result[key] = not result[key]
 
     # If MescProblem has been changed, also change MescSpot
-    if result['MescProblem'] == True:
+    if result['MescProblem']:
         result['MescSpot'] = np.NaN
 
     return result
@@ -97,7 +98,8 @@ def integer_to_result_dict(result_integer, blood_test=False):
 if __name__ == "__main__":
 
     # Get expected result
-    expected_result, image_path = load_expected_result_table()
+    # expected_result, image_path = load_expected_result_table()
+    expected_result, image_path = load_sorted_results_table()
 
     # Initialize comparison DataFrame
     compare_result = pd.DataFrame(np.nan, index=range(len(image_path)), columns=expected_result.columns)
