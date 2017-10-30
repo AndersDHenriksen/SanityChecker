@@ -92,6 +92,16 @@ def imreconstruct(marker, mask):
     """Performs morphological reconstruction of the image marker under the image mask."""
     return morphology.reconstruction(np.logical_and(marker, mask), mask).astype('bool')
 
+# For openCV > 3.0 the following function can be used instead (faster)
+# def bw_reconstruct(marker, mask):
+#     """Performs morphological reconstruction of the image marker under the image mask."""
+#     marker = np.logical_and(marker, mask)
+#     areas_num, labels = cv2.connectedComponents(mask.astype(np.uint8))
+#     area_idx = np.arange(1, areas_num)
+#     keep_idx = np.array([False] + [np.any(marker[labels == l]) for l in area_idx])
+#     keep_mask = np.isin(labels, np.flatnonzero(keep_idx))
+#     return keep_mask
+
 
 def imgradient(img):
     """ Calculates the (Sobel) gradient magnitude of the image."""
@@ -657,7 +667,7 @@ if __name__ == "__main__":
 
     # Load images
     if use_local_images:
-        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/Error_but_okay/D4.0B-20170904123001'
+        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/Error_but_okay/D4.0E-20170920154247'
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()
