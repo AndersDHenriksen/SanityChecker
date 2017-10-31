@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import glob
 
+version = '0.9'
+
 
 def find_chambers(image_path, blood_also=False, debug=False):
     """ Find chambers in camera image
@@ -27,7 +29,7 @@ def find_chambers(image_path, blood_also=False, debug=False):
     poly_bss = np.array(
         [(2251, 1968), (2194, 2282), (2233, 2408), (2308, 2426), (2418, 1866), (2359, 1857), (2251, 1968)], dtype='int')
     poly_ofc2 = np.array([(560, 2480), (524, 2109), (374, 2381), (560, 2480)], dtype='int')
-    chambers = [None]*2
+    chambers = [None] * 2
     error = ''
     blood_present = [None] * 2
 
@@ -128,7 +130,7 @@ def bwareafilt(mask, n=1, area_range=(0, np.inf)):
 
 
 def max_span(a):
-    """ Return the lenght/span of true elements in input. """
+    """ Return the length/span of true elements in input. """
     true_idx = np.argwhere(a)
     if np.size(true_idx) == 0:
         return 0
@@ -157,7 +159,7 @@ def detect_spot_bc(chamber, reference_chamber, debug=False):
     r, _ = get_overlap_images(r, ref_img, translation)
     chm_img, ref_img = get_overlap_images(chm_img, ref_img, translation)
 
-    half_point = int(chm_img.shape[0]/2)
+    half_point = int(chm_img.shape[0] / 2)
     chm_img = chm_img[:half_point, :]
     ref_img = ref_img[:half_point, :]
     r = r[:half_point, :]
@@ -217,10 +219,9 @@ def detect_spot_mesc_dissapear(chamber, reference_chamber):
         chm_mask = chm_img > chm_inner.mean() + ref_inner.std()
         chm_noborder = segmentation.clear_border(np.logical_or(chm_mask, np.logical_not(inner_mask)))
         chm_blob, chm_blob_area = bwareafilt(chm_noborder)
-        if float(ref_blob_area)/chm_blob_area > 3.5 and float(ref_blob_area)/chm_mask[r < 0.83].sum() > 2:
+        if float(ref_blob_area) / chm_blob_area > 3.5 and float(ref_blob_area) / chm_mask[r < 0.83].sum() > 2:
             return True
     return False
-
 
 
 def detect_spot_mesc(chamber, reference_chamber, debug=False):
@@ -273,7 +274,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
         ref_noborder = segmentation.clear_border(np.logical_or(ref_mask, np.logical_not(inner_mask)))
         ref_blob, ref_blob_area = bwareafilt(ref_noborder)
         overlap = float(np.logical_and(ref_blob, chm_blob).sum()) / np.logical_or(ref_blob, chm_blob).sum()
-        if overlap > 0.55 and 3.0/2 > float(chm_blob_area)/ref_blob_area > 2.0/3:
+        if overlap > 0.55 and 3.0 / 2 > float(chm_blob_area) / ref_blob_area > 2.0 / 3:
             return False
 
     if setting['CompensateAverage']:
@@ -283,7 +284,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
         compensation = 0
 
     # Get difference between chambers and detect beads
-    diff_img = (ref_img.astype('int16')+compensation - chm_img)
+    diff_img = (ref_img.astype('int16') + compensation - chm_img)
     if ((diff_img * (r < .75))**2).sum() < 1.1e5:
         return False
     else:
@@ -297,7 +298,7 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
     center_mask = np.logical_and((i - np.mean(i[mask]))**2 + (j - np.mean(j[mask]))**2 < 60**2, r < .75)
     ratio2 = np.sum(mask[center_mask]).astype('f') / np.sum(center_mask)
     has_beads = ratio1 > 0.1 and ratio2 > 1.18 * ratio1 and (ratio1 > setting['RatioThres'] or
-                ratio2 > 2 * setting['RatioThres'])
+                                                             ratio2 > 2 * setting['RatioThres'])
 
     # Remove spot close to right edge, i.e. beads that started dissolving
     largest_cc, largest_cc_area = bwareafilt(mask, n=1)
@@ -329,8 +330,8 @@ def linear_correction(chamber):
 
 def radial_correction(chamber):
     """ Compensate out higher intensity in SW corner"""
-    light_angle = 3*np.pi/4
-    chamber_angle = np.angle(chamber.X + 1j*chamber.Y)
+    light_angle = 3 * np.pi / 4
+    chamber_angle = np.angle(chamber.X + 1j * chamber.Y)
     mask = np.logical_and.reduce((chamber.R < .9, chamber.R > .5, np.cos(chamber_angle + light_angle) > 0))
     o = np.ones(np.sum(mask))
     coef = np.linalg.lstsq(np.array([o, np.cos(chamber_angle[mask] + light_angle)]).T, chamber.Img[mask])[0].clip(min=0)
@@ -424,14 +425,14 @@ def detect_badfill_mesc(chamber, reference_chamber, debug=False):
             for i in range(len(bubble_cor)):
                 if mesc_overflow == 0:
                     mesc_overflow, keep_idx[i] = extend_bubble_edge(bubble_cor[i], bubble_edge, 20, 200, r, x)
-            bubble_cor = bubble_cor[keep_idx[:i+1]]
+            bubble_cor = bubble_cor[keep_idx[:i + 1]]
 
             # Now loop through edge point pairs and se if they are close to forming a full bubble edge
             for i in range(len(bubble_cor)):
                 for j in range(i + 1, len(bubble_cor)):
                     dist = np.sqrt(np.sum((bubble_cor[i] - bubble_cor[j])**2))
                     if dist > 50 and mesc_overflow == 0:
-                        mesc_overflow, _ = extend_bubble_edge(bubble_cor[[i, j]], bubble_edge, dist/20, 300, r, x)
+                        mesc_overflow, _ = extend_bubble_edge(bubble_cor[[i, j]], bubble_edge, dist / 20, 300, r, x)
 
     # If print output is desired
     # print conclusions[mesc_overflow]
@@ -459,8 +460,12 @@ def extend_bubble_edge(bubble_cor, bubble_edge, extend_dist, area_min, r, x):
     bubble_extension = imreconstruct(marker, bubble_edge)
     if r[bubble_extension].mean() > 0.85:
         return 0, 0
-    mask_extended = cv2.distanceTransform(np.logical_not(bubble_extension).astype('uint8'),
-                                          cv2.cv.CV_DIST_L2, 5) < extend_dist
+    if cv2.__version__[0] == '2':
+        mask_extended = cv2.distanceTransform(np.logical_not(bubble_extension).astype('uint8'),
+                                              cv2.cv.CV_DIST_L2, 5) < extend_dist
+    if cv2.__version__[0] == '3':
+        mask_extended = cv2.distanceTransform(np.logical_not(bubble_extension).astype('uint8'),
+                                              cv2.DIST_L2, 5) > extend_dist
     bubble_extended = np.logical_not(np.logical_or(mask_extended, imreconstruct(mask_extended, bubble_edge)))
     bubble_mask = np.logical_and.reduce((bubble_extended, r < .9, x < .25))
     bubbles_potentials, bubble_areas = bwareafilt(bubble_mask, area_range=(area_min, 20000))
@@ -511,7 +516,7 @@ def get_overlap_images(img1, img2, translation=None):
 
 
 def corr2d_ocv(img1, img2):
-    """ Calculate translation betweeen image 1 and 2 using cv2.phaseCorrelate. """
+    """ Calculate translation between image 1 and 2 using cv2.phaseCorrelate. """
     res = cv2.phaseCorrelate(img1.astype(np.float), img2.astype(np.float))
     if isinstance(res[0], tuple):
         res = res[0]
@@ -590,9 +595,9 @@ def find_clusters(a, allowed_jump=0, min_size=1):
     clusters = []
     current_cluster_size = 1
     for i in range(1, len(a)):
-        if da[i-1] > allowed_jump + 1:
+        if da[i - 1] > allowed_jump + 1:
             if current_cluster_size >= min_size:
-                clusters.append(a[i-current_cluster_size:i])
+                clusters.append(a[i - current_cluster_size:i])
             current_cluster_size = 1
         else:
             current_cluster_size += 1
@@ -605,8 +610,8 @@ def find_clusters(a, allowed_jump=0, min_size=1):
 def sanity_checker(image_paths, blood_test=False):
     """ The main function managing images and tests. """
 
-    result = {'Error': '', 'BcSpot': None, 'MescSpot': None, 'MescProblem': None, 'BloodPresent': blood_test}
-
+    result = {'Error': '', 'BcSpot': None, 'MescSpot': None, 'MescProblem': None, 'BloodPresent': blood_test,
+              'Version': version}
     # Image 0
     image_idx = 0
     reference_chambers, result['Error'], _ = find_chambers(image_paths[image_idx])
@@ -694,7 +699,7 @@ if __name__ == "__main__":
     # Convert result dict. to unique integer. 0 = no problems
     out_bin = [not result['BcSpot'], not result['MescSpot'], result['MescProblem'] > 0,
                blood_test and not result['BloodPresent']]
-    out_int = sum([b*2**i for i, b in enumerate(out_bin)])
+    out_int = sum([b * 2**i for i, b in enumerate(out_bin)])
     print out_int
 
     # Install instructions for Anaconda 3.6
