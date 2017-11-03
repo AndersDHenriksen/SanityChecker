@@ -18,19 +18,19 @@ def load_expected_result_table():
     category_folders = ['Good', 'No_Beads', 'No_Reagents', 'No_Sample', 'Not_Filled', 'Premature_Partial',
                         'Premature_Full']
     category_results = {'Good': {'BcSpot': True, 'MescSpot': True, 'BloodPresent': np.NaN, 'MescProblem': False,
-                                 'Error': ''},
+                                 'Error': '', 'Version': np.NaN},
                         'No_Beads': {'BcSpot': True, 'MescSpot': False, 'BloodPresent': np.NaN, 'MescProblem': False,
-                                     'Error': ''},
+                                     'Error': '', 'Version': np.NaN},
                         'No_Reagents': {'BcSpot': False, 'MescSpot': True, 'BloodPresent': np.NaN, 'MescProblem': False,
-                                        'Error': ''},
+                                        'Error': '', 'Version': np.NaN},
                         'No_Sample': {'BcSpot': False, 'MescSpot': False, 'BloodPresent': np.NaN, 'MescProblem': False,
-                                      'Error': ''},
+                                      'Error': '', 'Version': np.NaN},
                         'Not_Filled': {'BcSpot': True, 'MescSpot': True, 'BloodPresent': np.NaN, 'MescProblem': True,
-                                       'Error': ''},
+                                       'Error': '', 'Version': np.NaN},
                         'Premature_Full': {'BcSpot': True, 'MescSpot': np.NaN, 'BloodPresent': np.NaN,
-                                           'MescProblem': False, 'Error': ''},
+                                           'MescProblem': False, 'Error': '', 'Version': np.NaN},
                         'Premature_Partial': {'BcSpot': True, 'MescSpot': np.NaN, 'BloodPresent': np.NaN,
-                                              'MescProblem': True, 'Error': ''}
+                                              'MescProblem': True, 'Error': '', 'Version': np.NaN}
                         }
 
     # Construct expected_results and path constants
@@ -54,7 +54,7 @@ def load_sorted_results_table():
     :return: Tuple with pandas data frame with expected/correct result and list of image folders
     """
 
-    main_path = '/media/anders/-Anders-5-/BluSense/20170918_Images'
+    main_path = '/media/anders/-Anders-5-/BluSense/ImageLibrary_Plasma_Sorted'
     category_folders = [cf for cf in os.listdir(main_path) if cf.isdigit() and len(cf) == 1]
 
     image_path = []
@@ -75,7 +75,7 @@ def integer_to_result_dict(result_integer, blood_test=False):
     Convert integer/exit code to result dictionary as returned AllChecks.py: sanity_checker
     """
     result = {'Error': '', 'BcSpot': True, 'MescSpot': True, 'MescProblem': False,
-              'BloodPresent': True if blood_test else np.NaN}
+              'BloodPresent': True if blood_test else np.NaN, 'Version': np.NaN}
 
     # If exit code -1, some error occurred. Error text can vary.
     if result_integer == -1:
