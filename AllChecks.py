@@ -24,7 +24,7 @@ def find_chambers(image_path, blood_also=False, debug=False):
     """
 
     # Define settings and output
-    setting = {'PositionExpected': (1380, 2500), 'CutSide': 500, 'BcOffsetToRefImg': (-34, -610), 'BcRi': 146,
+    setting = {'PositionExpected': (1650, 2700), 'CutSide': 500, 'BcOffsetToRefImg': (-34, -610), 'BcRi': 146,
                'BcRj': 160, 'MescOffsetToRefImg': (2, 24), 'MescR': 142, 'BloodRatio': (0.4, 0.6), 'xCorMin': 0.1}
     poly_bss = np.array(
         [(2251, 1968), (2194, 2282), (2233, 2408), (2308, 2426), (2418, 1866), (2359, 1857), (2251, 1968)], dtype='int')
@@ -672,7 +672,7 @@ if __name__ == "__main__":
 
     # Load images
     if use_local_images:
-        image_folder = '/media/anders/-Anders-5-/BluSense/20171026_Images/Error_but_okay/D4.0E-20170920154247'
+        image_folder = '/media/anders/-Anders-5-/BluSense/Images_D5/D5.00008-20171107134542'
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()
