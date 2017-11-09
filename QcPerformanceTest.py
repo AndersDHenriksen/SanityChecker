@@ -54,7 +54,7 @@ def load_sorted_results_table():
     :return: Tuple with pandas data frame with expected/correct result and list of image folders
     """
 
-    main_path = '/media/anders/-Anders-5-/BluSense/ImageLibrary_Plasma_Sorted'
+    main_path = '/media/anders/-Anders-5-/BluSense/Images_D5'
     category_folders = [cf for cf in os.listdir(main_path) if cf.isdigit() and len(cf) == 1]
 
     image_path = []
@@ -98,8 +98,8 @@ def integer_to_result_dict(result_integer, blood_test=False):
 if __name__ == "__main__":
 
     # Get expected result
-    expected_result, image_path = load_expected_result_table()
-    # expected_result, image_path = load_sorted_results_table()
+    # expected_result, image_path = load_expected_result_table()
+    expected_result, image_path = load_sorted_results_table()
 
     # Initialize comparison DataFrame
     compare_result = pd.DataFrame(np.nan, index=range(len(image_path)), columns=expected_result.columns)

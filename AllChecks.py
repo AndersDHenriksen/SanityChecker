@@ -195,7 +195,12 @@ def detect_spot_bc(chamber, reference_chamber, debug=False):
     return has_spot
 
 
-def detect_spot_mesc_dissapear(chamber, reference_chamber):
+def detect_spot_mesc_dissapear(chamber, reference_chamber, soft_check=False):
+
+    settings = {'min_area': 2e3, 'area_ratio': 3.5, 'area_ratio2': 2}
+    if soft_check:
+        settings = {'min_area': 1e3, 'area_ratio': 2.5, 'area_ratio2': 0.3}
+
     """ Detect if bead spot is present in reference MESC-chamber but much smaller in current MESC-chamber. """
     # Align chamber images and radius image
     chm_img, ref_img = get_overlap_images(chamber.Img, reference_chamber.Img)
@@ -214,12 +219,13 @@ def detect_spot_mesc_dissapear(chamber, reference_chamber):
     ref_mask = ref_img > ref_inner.mean() + ref_inner.std()
     ref_noborder = segmentation.clear_border(np.logical_or(ref_mask, np.logical_not(inner_mask)))
     ref_blob, ref_blob_area = bwareafilt(ref_noborder)
-    if ref_blob_area > 2e3:
+    if ref_blob_area > settings['min_area']:
         chm_inner = chm_img[inner_mask]
         chm_mask = chm_img > chm_inner.mean() + ref_inner.std()
         chm_noborder = segmentation.clear_border(np.logical_or(chm_mask, np.logical_not(inner_mask)))
         chm_blob, chm_blob_area = bwareafilt(chm_noborder)
-        if float(ref_blob_area) / chm_blob_area > 3.5 and float(ref_blob_area) / chm_mask[r < 0.83].sum() > 2:
+        if float(ref_blob_area) / chm_blob_area > settings['area_ratio'] and \
+           float(ref_blob_area) / chm_mask[r < 0.83].sum() > settings['area_ratio2']:
             return True
     return False
 
@@ -297,8 +303,11 @@ def detect_spot_mesc(chamber, reference_chamber, debug=False):
     j, i = np.meshgrid(np.arange(1, np.size(mask, 1) + 1), np.arange(1, np.size(mask, 0) + 1))
     center_mask = np.logical_and((i - np.mean(i[mask]))**2 + (j - np.mean(j[mask]))**2 < 60**2, r < .75)
     ratio2 = np.sum(mask[center_mask]).astype('f') / np.sum(center_mask)
-    has_beads = ratio1 > 0.1 and ratio2 > 1.18 * ratio1 and (ratio1 > setting['RatioThres'] or
-                                                             ratio2 > 2 * setting['RatioThres'])
+    has_beads = False
+    if ratio1 > 0.1 and ratio2 > 1.18 * ratio1:
+        has_beads = ratio1 > setting['RatioThres'] or ratio2 > 2 * setting['RatioThres']
+        if not has_beads and ratio1 + ratio2 / 2 > 1.7 * setting['RatioThres']:
+            has_beads = detect_spot_mesc_dissapear(chamber, reference_chamber, soft_check=True)
 
     # Remove spot close to right edge, i.e. beads that started dissolving
     largest_cc, largest_cc_area = bwareafilt(mask, n=1)
@@ -672,7 +681,7 @@ if __name__ == "__main__":
 
     # Load images
     if use_local_images:
-        image_folder = '/media/anders/-Anders-5-/BluSense/Images_D5/D5.00008-20171107134542'
+        image_folder = '/media/anders/-Anders-5-/BluSense/Images_D5/2/D5.00008-20171109134345'
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()
