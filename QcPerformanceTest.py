@@ -98,8 +98,8 @@ def integer_to_result_dict(result_integer, blood_test=False):
 if __name__ == "__main__":
 
     # Get expected result
-    # expected_result, image_path = load_expected_result_table()
-    expected_result, image_path = load_sorted_results_table()
+    expected_result, image_path = load_expected_result_table()
+    # expected_result, image_path = load_sorted_results_table()
 
     # Initialize comparison DataFrame
     compare_result = pd.DataFrame(np.nan, index=range(len(image_path)), columns=expected_result.columns)
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     for i in range(len(image_path)):
         image_files = [os.path.join(image_path[i], f) for f in os.listdir(image_path[i])]
         blood_test = not np.isnan(expected_result['BloodPresent'][i])
-        actual_result = qc.sanity_checker(image_files, blood_test)
+        actual_result = qc.sanity_checker(image_files, blood_test, use_d4_position=True)
         actual_result['MescProblem'] = actual_result['MescProblem'] > 0
 
         for c in actual_result.keys():

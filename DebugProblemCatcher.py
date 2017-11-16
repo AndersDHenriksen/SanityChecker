@@ -7,6 +7,9 @@ import os
 # Remember to also add breakpoints in gutter, look for '_ = set breakpoint here'
 entries_to_test = ['BloodPresent', 'BcSpot', 'MescSpot', 'MescProblem']
 
+# Use of expected position for D4 BluBox instruments
+use_d4_position = False
+
 # Load table of results, choose one of the lines below
 # expected_result, image_path = qct.load_expected_result_table()
 expected_result, image_path = qct.load_sorted_results_table()
@@ -21,12 +24,13 @@ for i in range(0, len(image_path)):
 
     # Image 0
     image_idx = 0
-    reference_chambers, _, _ = qc.find_chambers(image_files[image_idx])
+    reference_chambers, _, _ = qc.find_chambers(image_files[image_idx], use_d4_position=use_d4_position)
 
     # Image 1
     image_idx = 1
     blood_test = not np.isnan(expected_result['BloodPresent'][i])
-    chambers, _, result['BloodPresent'] = qc.find_chambers(image_files[image_idx], blood_test)
+    chambers, _, result['BloodPresent'] = qc.find_chambers(image_files[image_idx], blood_test,
+                                                           use_d4_position=use_d4_position)
     if blood_test and np.isin('BloodPresent', entries_to_test) and result['BloodPresent'] != \
             expected_result['BloodPresent'][i]:
         print 'BloodPresent failed: ' + dir_link
@@ -43,7 +47,7 @@ for i in range(0, len(image_path)):
 
     # Image 2
     image_idx = 2
-    chambers, _, _ = qc.find_chambers(image_files[image_idx])
+    chambers, _, _ = qc.find_chambers(image_files[image_idx], use_d4_position=use_d4_position)
     if result['MescSpot']:
         result['MescSpot'] = qc.detect_spot_mesc(chambers[1], dry_mesc_chamber)
     if np.isin('MescSpot', entries_to_test) and result['MescSpot'] != expected_result['MescSpot'][i] and not np.isnan(

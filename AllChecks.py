@@ -9,16 +9,17 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import glob
 
-version = '0.9'
+version = '0.10'
 
 
-def find_chambers(image_path, blood_also=False, debug=False):
+def find_chambers(image_path, blood_also=False, use_d4_position=False, debug=False):
     """ Find chambers in camera image
 
     Chambers are identified using rough idea of their location and using cross-correlation to a reference image.
 
     :param image_path: String with path and name of image.
     :param blood_also: Bool, if blood should be looked for in BSS and OFC2.
+    :param use_d4_position: Bool, if old expected MESC position from D4 version of BluBox should be used.
     :param debug: Bool, if plot with chambers should be produced
     :return: 3-item tuple with List of 2 chamber objects, possible error string, bool if blood was detected.
     """
@@ -26,6 +27,9 @@ def find_chambers(image_path, blood_also=False, debug=False):
     # Define settings and output
     setting = {'PositionExpected': (1650, 2700), 'CutSide': 500, 'BcOffsetToRefImg': (-34, -610), 'BcRi': 146,
                'BcRj': 160, 'MescOffsetToRefImg': (2, 24), 'MescR': 142, 'BloodRatio': (0.4, 0.6), 'xCorMin': 0.1}
+    if use_d4_position:
+        setting['PositionExpected'] = (1380, 2500)
+
     poly_bss = np.array(
         [(2251, 1968), (2194, 2282), (2233, 2408), (2308, 2426), (2418, 1866), (2359, 1857), (2251, 1968)], dtype='int')
     poly_ofc2 = np.array([(560, 2480), (524, 2109), (374, 2381), (560, 2480)], dtype='int')
@@ -616,20 +620,21 @@ def find_clusters(a, allowed_jump=0, min_size=1):
     return clusters
 
 
-def sanity_checker(image_paths, blood_test=False):
+def sanity_checker(image_paths, blood_test=False, use_d4_position=False):
     """ The main function managing images and tests. """
 
     result = {'Error': '', 'BcSpot': None, 'MescSpot': None, 'MescProblem': None, 'BloodPresent': blood_test,
               'Version': version}
     # Image 0
     image_idx = 0
-    reference_chambers, result['Error'], _ = find_chambers(image_paths[image_idx])
+    reference_chambers, result['Error'], _ = find_chambers(image_paths[image_idx], use_d4_position=use_d4_position)
     if result['Error'] != '':
         return result
 
     # Image 1
     image_idx = 1
-    chambers, result['Error'], result['BloodPresent'] = find_chambers(image_paths[image_idx], blood_test)
+    chambers, result['Error'], result['BloodPresent'] = find_chambers(image_paths[image_idx], blood_test,
+                                                                      use_d4_position=use_d4_position)
     if result['Error'] != '':
         return result
     result['BcSpot'] = detect_spot_bc(chambers[0], reference_chambers[0])
@@ -639,7 +644,7 @@ def sanity_checker(image_paths, blood_test=False):
 
     # Image 2
     image_idx = 2
-    chambers, result['Error'], _ = find_chambers(image_paths[image_idx])
+    chambers, result['Error'], _ = find_chambers(image_paths[image_idx], use_d4_position=use_d4_position)
     if result['Error'] != '':
         return result
     if result['MescSpot']:
