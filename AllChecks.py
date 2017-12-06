@@ -692,7 +692,7 @@ if __name__ == "__main__":
     else:
         parser = argparse.ArgumentParser()
         parser.add_argument('image_list', nargs='*')
-    parser.add_argument('-v', '--version', action='store_true')
+        parser.add_argument('-v', '--version', action='store_true')
         args = parser.parse_args()
         image_paths = args.image_list
 
