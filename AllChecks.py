@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import cv2
 from skimage import morphology, measure, segmentation
@@ -9,7 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import glob
 
-version = '0.10'
+version = '0.12'
 
 
 def find_chambers(image_path, blood_also=False, use_d4_position=False, debug=False):
@@ -690,31 +691,42 @@ if __name__ == "__main__":
         image_paths = glob.glob(image_folder + '/*.jpg')
     else:
         parser = argparse.ArgumentParser()
-        parser.add_argument('image1')
-        parser.add_argument('image2')
-        parser.add_argument('image3')
+        parser.add_argument('image_list', nargs='*')
+    parser.add_argument('-v', '--version', action='store_true')
         args = parser.parse_args()
-        image_paths = [args.image1, args.image2, args.image3]
+        image_paths = args.image_list
 
+    if args.version:
+        print version
+    sys.exit(0)
     # Check number of images
     n_images = len(image_paths)
     if n_images != 3 and n_images != 5:
-        print -1
+        sys.exit(-1)
     if n_images == 5:
         image_paths = [image_paths[0], image_paths[2], image_paths[4]]
 
     # Run main sanity checks function
-    result = sanity_checker(image_paths, blood_test)
+    try:
+        result = sanity_checker(image_paths, blood_test)
+    except:
+        result = {'Error':'Ooops...sanity_checker went fishing.'}
+        sys.exit(-1)
 
     # Check for error
     if not result['Error'] == '':
-        print -1
+    # TODO print log string here:
+        print result
+        sys.exit(1)
 
     # Convert result dict. to unique integer. 0 = no problems
     out_bin = [not result['BcSpot'], not result['MescSpot'], result['MescProblem'] > 0,
                blood_test and not result['BloodPresent']]
     out_int = sum([b * 2**i for i, b in enumerate(out_bin)])
-    print out_int
+    result = {'QC':out_int}
+    # TODO print log string here:
+    print result
+    sys.exit(out_int)
 
     # Install instructions for Anaconda 3.6
     # conda update conda
